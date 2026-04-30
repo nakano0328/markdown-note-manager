@@ -3,6 +3,7 @@
 	import type { TreeNode } from '$lib/types';
 	import { page } from '$app/state';
 	import { cn } from '$lib/utils';
+	import { treeState } from '$lib/stores/tree-state.svelte';
 	import Self from './FileTreeNode.svelte';
 
 	interface Props {
@@ -12,8 +13,8 @@
 
 	let { node, depth = 0 }: Props = $props();
 
-	// svelte-ignore state_referenced_locally
-	let open = $state(depth < 1);
+	const defaultOpen = $derived(depth < 1);
+	const open = $derived(treeState.isOpen(node.path, defaultOpen));
 
 	const href = $derived(
 		node.type === 'file' ? `/note/${node.path.split('/').map(encodeURIComponent).join('/')}` : null
@@ -28,7 +29,7 @@
 {#if node.type === 'directory'}
 	<button
 		type="button"
-		onclick={() => (open = !open)}
+		onclick={() => treeState.toggle(node.path, defaultOpen)}
 		class={cn(
 			'flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-sm hover:bg-accent'
 		)}
