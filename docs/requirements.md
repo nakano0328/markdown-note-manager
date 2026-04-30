@@ -50,7 +50,7 @@ interface Timetable {
   \[dayOfWeek: string\]: {  
     \[period: string\]: {  
       subject: string;  
-      directory: string; // NOTES\_DIRからの相対パス (例: "3年生/春/パターン認識")  
+      directory: string; // NOTES\_DIRからの相対パス (例: "2年生/春/パターン認識")  
     }  
   }  
 }
