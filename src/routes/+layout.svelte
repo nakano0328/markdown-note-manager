@@ -20,7 +20,7 @@
 </script>
 
 <div class="flex h-screen w-screen flex-col overflow-hidden">
-	<header class="flex h-12 shrink-0 items-center justify-between border-b bg-background px-3">
+	<header class="flex h-12 shrink-0 items-center justify-between border-b bg-sidebar-bg px-3">
 		<div class="flex items-center gap-2">
 			<button
 				type="button"

@@ -79,7 +79,7 @@
 					activeView === 'editor' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
 				)}
 			>
-				編集
+				エディタ
 			</button>
 			<button
 				type="button"

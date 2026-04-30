@@ -89,6 +89,9 @@
 		'.cm-codeblock-bg': {
 			backgroundColor: '#f3f4f6'
 		},
+		'.cm-codeblock-bg span': {
+			color: '#000000 !important'
+		},
 		'.cm-list-indent-guide': {
 			backgroundImage:
 				'repeating-linear-gradient(to right, transparent 0 calc(2ch - 1px), #b7c0ca calc(2ch - 1px) 2ch)',
@@ -363,7 +366,7 @@
 	<div class="flex h-11 shrink-0 items-center justify-between border-b px-3">
 		<div class="flex min-w-0 items-center gap-2">
 			<FileText class="size-4 shrink-0 text-muted-foreground" />
-			<div class="min-w-0 truncate text-sm font-medium" title={filePath}>編集</div>
+			<div class="min-w-0 truncate text-sm font-medium" title={filePath}>エディタ</div>
 		</div>
 		<div class="flex shrink-0 items-center gap-2 text-xs tabular-nums text-muted-foreground">
 			<span class="rounded border bg-white px-1.5 py-0.5 text-black">Tab {caretIndentLevel}</span>

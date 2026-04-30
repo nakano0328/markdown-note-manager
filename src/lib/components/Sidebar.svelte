@@ -31,12 +31,12 @@
 	onMount(load);
 </script>
 
-<aside class="flex h-full flex-col border-r bg-background">
+<aside class="flex h-full flex-col border-r bg-sidebar-bg">
 	<div class="flex items-center justify-between border-b px-3 py-2">
 		<div class="min-w-0">
-			<div class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notes</div>
+			<div class="text-xs font-semibold uppercase tracking-wide text-foreground">Notes</div>
 			{#if root}
-				<div class="truncate text-[11px] text-muted-foreground" title={root}>{root}</div>
+				<div class="truncate text-[11px] text-foreground/60" title={root}>{root}</div>
 			{/if}
 		</div>
 		<button
