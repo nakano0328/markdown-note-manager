@@ -56,9 +56,7 @@
 				<Loader2 class="size-4 animate-spin" /> Loading…
 			</div>
 		{:else if errorMessage}
-			<div
-				class="flex items-start gap-2 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
-			>
+			<div class="flex items-start gap-2 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-800">
 				<AlertCircle class="mt-0.5 size-4 shrink-0" />
 				<div>
 					<div class="font-semibold">Failed to load notes</div>
