@@ -23,7 +23,7 @@ export interface TaskItem {
 	isCompleted: boolean;
 }
 
-export type TreeNodeType = 'file' | 'directory';
+export type TreeNodeType = 'file' | 'image' | 'directory';
 
 export interface TreeNode {
 	name: string;

@@ -174,7 +174,11 @@
 			}
 
 			update(update: ViewUpdate) {
-				if (update.docChanged || update.viewportChanged || update.startState.tree !== update.state.tree) {
+				if (
+					update.docChanged ||
+					update.viewportChanged ||
+					syntaxTree(update.startState) !== syntaxTree(update.state)
+				) {
 					this.decorations = buildCodeBlockDecorations(update.view);
 				}
 			}

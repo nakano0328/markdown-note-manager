@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { ChevronRight, ChevronDown, FileText, Folder, FolderOpen } from 'lucide-svelte';
+	import {
+		ChevronRight,
+		ChevronDown,
+		FileText,
+		Folder,
+		FolderOpen,
+		Image as ImageIcon
+	} from 'lucide-svelte';
 	import type { TreeNode } from '$lib/types';
 	import { page } from '$app/state';
 	import { cn } from '$lib/utils';
@@ -16,11 +23,16 @@
 	const defaultOpen = $derived(depth < 1);
 	const open = $derived(treeState.isOpen(node.path, defaultOpen));
 
+	const encodedPath = $derived(node.path.split('/').map(encodeURIComponent).join('/'));
 	const href = $derived(
-		node.type === 'file' ? `/note/${node.path.split('/').map(encodeURIComponent).join('/')}` : null
+		node.type === 'file'
+			? `/note/${encodedPath}`
+			: node.type === 'image'
+				? `/api/images/${encodedPath}`
+				: null
 	);
 
-	const isActive = $derived(href !== null && page.url.pathname === href);
+	const isActive = $derived(node.type === 'file' && href !== null && page.url.pathname === href);
 	const dirPad = $derived(depth * 12 + 4);
 	const filePad = $derived(depth * 12 + 22);
 	const childDepth = $derived(depth + 1);
@@ -52,13 +64,19 @@
 {:else}
 	<a
 		href={href ?? '#'}
+		target={node.type === 'image' ? '_blank' : undefined}
+		rel={node.type === 'image' ? 'noreferrer' : undefined}
 		class={cn(
 			'flex w-full items-center gap-1 rounded px-1 py-0.5 text-sm hover:bg-accent',
 			isActive && 'bg-accent font-medium text-accent-foreground'
 		)}
 		style="padding-left: {filePad}px"
 	>
-		<FileText class="size-4 shrink-0 text-muted-foreground" />
+		{#if node.type === 'image'}
+			<ImageIcon class="size-4 shrink-0 text-muted-foreground" />
+		{:else}
+			<FileText class="size-4 shrink-0 text-muted-foreground" />
+		{/if}
 		<span class="truncate">{node.name}</span>
 	</a>
 {/if}
