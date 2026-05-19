@@ -4,31 +4,45 @@
 	import TaskDashboard from '$lib/components/TaskDashboard.svelte';
 	import TimetableGrid from '$lib/components/TimetableGrid.svelte';
 	import WeekCalendar from '$lib/components/WeekCalendar.svelte';
-	import type { TaskItem, Timetable, TimetableSettings, TimetableTerm } from '$lib/types';
+	import { formatLocalDate, resolveDaySchedule, weekdayFromDate } from '$lib/calendar';
+	import type {
+		CalendarEvent,
+		PublicHoliday,
+		TaskItem,
+		Timetable,
+		TimetableSettings,
+		TimetableTerm
+	} from '$lib/types';
 	import { AlertCircle, Loader2 } from 'lucide-svelte';
 
-	const DAYS = ['月', '火', '水', '木', '金'] as const;
+	const today = formatLocalDate(new Date());
+	const todayDay = weekdayFromDate(today);
 
 	let timetable = $state<Timetable>({});
 	let timetableSettings = $state<TimetableSettings | null>(null);
 	let activeTerm = $state<TimetableTerm | null>(null);
 	let viewedTerm = $state<TimetableTerm | null>(null);
 	let tasks = $state<TaskItem[]>([]);
+	let todayEvents = $state<CalendarEvent[]>([]);
+	let todayHolidays = $state<PublicHoliday[]>([]);
 	let timetableLoading = $state(true);
 	let tasksLoading = $state(true);
+	let todayCalendarLoading = $state(true);
 	let timetableError = $state<string | null>(null);
 	let tasksError = $state<string | null>(null);
+	let todayCalendarError = $state<string | null>(null);
 
-	const todayDay: string | null = (() => {
-		const idx = new Date().getDay();
-		return idx >= 1 && idx <= 5 ? DAYS[idx - 1] : null;
-	})();
+	const todaySchedule = $derived(
+		resolveDaySchedule(today, timetable, todayEvents, todayHolidays)
+	);
 
 	async function loadTimetable(termId?: string) {
 		timetableLoading = true;
 		timetableError = null;
 		try {
-			const url = termId ? `/api/timetable?termId=${encodeURIComponent(termId)}` : '/api/timetable';
+			const url = termId
+				? `/api/timetable?termId=${encodeURIComponent(termId)}`
+				: `/api/timetable?date=${today}`;
 			const res = await fetch(url);
 			if (!res.ok) {
 				const body = await res.json().catch(() => ({ message: res.statusText }));
@@ -48,6 +62,25 @@
 			timetableError = e instanceof Error ? e.message : 'Unknown error';
 		} finally {
 			timetableLoading = false;
+		}
+	}
+
+	async function loadTodayCalendar() {
+		todayCalendarLoading = true;
+		todayCalendarError = null;
+		try {
+			const res = await fetch(`/api/calendar?from=${today}&to=${today}`);
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({ message: res.statusText }));
+				throw new Error(body.message ?? `Failed to load calendar (${res.status})`);
+			}
+			const data = (await res.json()) as { events: CalendarEvent[]; holidays: PublicHoliday[] };
+			todayEvents = data.events;
+			todayHolidays = data.holidays;
+		} catch (e) {
+			todayCalendarError = e instanceof Error ? e.message : 'Unknown error';
+		} finally {
+			todayCalendarLoading = false;
 		}
 	}
 
@@ -128,6 +161,7 @@
 
 	onMount(() => {
 		loadTimetable();
+		loadTodayCalendar();
 		loadTasks();
 	});
 </script>
@@ -149,13 +183,26 @@
 			<span>時間割の読み込みに失敗: {timetableError}</span>
 		</div>
 	{/if}
+	{#if todayCalendarError}
+		<div class="flex items-start gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+			<AlertCircle class="mt-0.5 size-4 shrink-0" />
+			<span>今日のカレンダー反映に失敗: {todayCalendarError}</span>
+		</div>
+	{/if}
 
 	{#if timetableLoading}
 		<div class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
 			<Loader2 class="size-4 animate-spin" /> 読み込み中…
 		</div>
 	{:else}
-		<DashboardStats {tasks} {timetable} {todayDay} />
+		<DashboardStats
+			{tasks}
+			{timetable}
+			{todayDay}
+			{todaySchedule}
+			calendarLoading={todayCalendarLoading}
+			calendarError={todayCalendarError}
+		/>
 
 		<WeekCalendar {timetable} />
 

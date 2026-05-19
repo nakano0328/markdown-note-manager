@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { beforeNavigate } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import EditorPane from '$lib/components/EditorPane.svelte';
 	import PreviewPane from '$lib/components/PreviewPane.svelte';
@@ -27,6 +28,7 @@
 	let requestId = 0;
 	let saveRequestId = 0;
 
+	const hasUnsavedChanges = $derived(!loading && content !== lastSavedContent);
 	const saveStatusText = $derived.by(() => {
 		if (loading) return '読み込み中';
 		if (saveStatus === 'pending') return '保存待ち';
@@ -36,6 +38,17 @@
 			return lastSavedAt ? `保存済み ${formatTime(lastSavedAt)}` : '保存済み';
 		}
 		return content === lastSavedContent ? '保存済み' : '未保存';
+	});
+
+	beforeNavigate((navigation) => {
+		if (!hasUnsavedChanges) return;
+		if (navigation.willUnload) {
+			navigation.cancel();
+			return;
+		}
+		if (!confirm('未保存の変更があります。保存せずに移動しますか？')) {
+			navigation.cancel();
+		}
 	});
 
 	$effect(() => {
@@ -123,11 +136,18 @@
 			event.preventDefault();
 			void saveContent();
 		};
+		const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+			if (!hasUnsavedChanges) return;
+			event.preventDefault();
+			event.returnValue = '';
+		};
 
 		window.addEventListener('keydown', handleKeydown);
+		window.addEventListener('beforeunload', handleBeforeUnload);
 
 		return () => {
 			window.removeEventListener('keydown', handleKeydown);
+			window.removeEventListener('beforeunload', handleBeforeUnload);
 			clearSaveTimer();
 			abortSaveRequest();
 		};

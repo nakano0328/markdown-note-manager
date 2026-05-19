@@ -1,23 +1,43 @@
 <script lang="ts">
-	import type { TaskItem, Timetable } from '$lib/types';
+	import type { DaySchedule, TaskItem, Timetable } from '$lib/types';
 	import { CalendarDays, ListTodo, BookOpen } from 'lucide-svelte';
 
 	interface Props {
 		tasks: TaskItem[];
 		timetable: Timetable;
 		todayDay: string | null;
+		todaySchedule: DaySchedule;
+		calendarLoading?: boolean;
+		calendarError?: string | null;
 	}
 
-	let { tasks, timetable, todayDay }: Props = $props();
+	let {
+		tasks,
+		timetable,
+		todayDay,
+		todaySchedule,
+		calendarLoading = false,
+		calendarError = null
+	}: Props = $props();
 
 	const pendingTasks = $derived(tasks.filter((t) => !t.isCompleted).length);
 	const totalTasks = $derived(tasks.length);
 	const todayClasses = $derived.by(() => {
-		if (!todayDay) return [] as { period: string; subject: string; directory: string }[];
-		const slots = timetable[todayDay] ?? {};
-		return Object.entries(slots)
-			.map(([period, slot]) => ({ period, ...slot }))
-			.sort((a, b) => Number(a.period) - Number(b.period));
+		return todaySchedule.periods
+			.filter((period) => period.slot)
+			.map((period) => ({
+				period: period.period,
+				subject: period.slot!.subject,
+				directory: period.slot!.directory,
+				source: period.source
+			}));
+	});
+	const todayLabel = $derived.by(() => {
+		const holiday = todaySchedule.publicHoliday?.name ?? todaySchedule.schoolHoliday?.title;
+		if (holiday) return holiday;
+		if (todaySchedule.inboundMove) return `${todaySchedule.inboundMove.fromDate.slice(5)} から移動`;
+		if (todaySchedule.followsDay) return `${todaySchedule.followsDay}曜扱い`;
+		return todayDay ? `${todayDay}曜` : '休日';
 	});
 </script>
 
@@ -29,8 +49,13 @@
 		</div>
 		<div class="mt-2 flex items-baseline gap-1">
 			<span class="text-2xl font-bold text-foreground">{todayClasses.length}</span>
-			<span class="text-xs text-muted-foreground">コマ ({todayDay ?? '休日'})</span>
+			<span class="text-xs text-muted-foreground">コマ ({todayLabel})</span>
 		</div>
+		{#if calendarLoading}
+			<p class="mt-1 text-[11px] text-muted-foreground">カレンダー反映を確認中…</p>
+		{:else if calendarError}
+			<p class="mt-1 text-[11px] text-amber-700">曜日時間割で暫定表示中</p>
+		{/if}
 		{#if todayClasses.length > 0}
 			<ul class="mt-2 space-y-1 text-xs">
 				{#each todayClasses as cls (cls.period)}
@@ -38,7 +63,9 @@
 						<span class="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
 							{cls.period}限
 						</span>
-						<span class="truncate">{cls.subject}</span>
+						<span class={cls.source === 'override' ? 'truncate font-medium text-amber-700' : 'truncate'}>
+							{cls.subject}
+						</span>
 					</li>
 				{/each}
 			</ul>

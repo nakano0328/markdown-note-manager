@@ -1,14 +1,14 @@
 import { Marked } from 'marked';
 import type { RendererObject, Token, TokenizerAndRendererExtension, Tokens } from 'marked';
 import katex from 'katex';
-import { createHighlighter } from 'shiki/bundle/web';
-import type { BundledLanguage, BundledTheme } from 'shiki/bundle/web';
+import { createHighlighterCore, type HighlighterCore, type LanguageRegistration } from 'shiki/core';
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
+import githubDark from 'shiki/themes/github-dark.mjs';
+import githubLight from 'shiki/themes/github-light.mjs';
 
 interface RenderMarkdownOptions {
 	filePath: string;
 }
-
-type ShikiHighlighter = Awaited<ReturnType<typeof createHighlighter>>;
 
 type HighlightedCodeToken = Tokens.Code & {
 	highlightedHtml?: string;
@@ -19,20 +19,18 @@ type MathToken = Tokens.Generic & {
 	displayMode: boolean;
 };
 
-const SHIKI_THEMES: BundledTheme[] = ['github-light', 'github-dark'];
-const SHIKI_LANGS: BundledLanguage[] = [
-	'markdown',
-	'typescript',
-	'javascript',
-	'svelte',
-	'json',
-	'bash',
-	'html',
-	'css',
-	'python',
-	'sql',
-	'yaml'
-] satisfies BundledLanguage[];
+type SupportedLanguage =
+	| 'markdown'
+	| 'typescript'
+	| 'javascript'
+	| 'svelte'
+	| 'json'
+	| 'bash'
+	| 'html'
+	| 'css'
+	| 'python'
+	| 'sql'
+	| 'yaml';
 
 const LANGUAGE_ALIASES: Record<string, string> = {
 	js: 'javascript',
@@ -44,7 +42,24 @@ const LANGUAGE_ALIASES: Record<string, string> = {
 	yml: 'yaml'
 };
 
-let highlighterPromise: Promise<ShikiHighlighter> | null = null;
+const LANGUAGE_LOADERS: Record<
+	SupportedLanguage,
+	() => Promise<LanguageRegistration | LanguageRegistration[]>
+> = {
+	markdown: () => import('shiki/langs/markdown.mjs').then((m) => m.default),
+	typescript: () => import('shiki/langs/typescript.mjs').then((m) => m.default),
+	javascript: () => import('shiki/langs/javascript.mjs').then((m) => m.default),
+	svelte: () => import('shiki/langs/svelte.mjs').then((m) => m.default),
+	json: () => import('shiki/langs/json.mjs').then((m) => m.default),
+	bash: () => import('shiki/langs/bash.mjs').then((m) => m.default),
+	html: () => import('shiki/langs/html.mjs').then((m) => m.default),
+	css: () => import('shiki/langs/css.mjs').then((m) => m.default),
+	python: () => import('shiki/langs/python.mjs').then((m) => m.default),
+	sql: () => import('shiki/langs/sql.mjs').then((m) => m.default),
+	yaml: () => import('shiki/langs/yaml.mjs').then((m) => m.default)
+};
+
+let highlighterPromise: Promise<HighlighterCore> | null = null;
 
 const mathBlockExtension: TokenizerAndRendererExtension = {
 	name: 'mathBlock',
@@ -143,12 +158,13 @@ function createRenderer(filePath: string): RendererObject<string, string> {
 
 async function highlightCode(code: string, lang: string | undefined): Promise<string> {
 	const language = normalizeLanguage(lang);
+	if (!isSupportedLanguage(language)) return renderPlainCode(code, language);
 
 	try {
 		const highlighter = await getHighlighter();
 		await ensureLanguageLoaded(highlighter, language);
 		return highlighter.codeToHtml(code, {
-			lang: language as BundledLanguage,
+			lang: language,
 			themes: {
 				light: 'github-light',
 				dark: 'github-dark'
@@ -160,18 +176,22 @@ async function highlightCode(code: string, lang: string | undefined): Promise<st
 	}
 }
 
-function getHighlighter(): Promise<ShikiHighlighter> {
-	highlighterPromise ??= createHighlighter({
-		themes: SHIKI_THEMES,
-		langs: SHIKI_LANGS
+function getHighlighter(): Promise<HighlighterCore> {
+	highlighterPromise ??= createHighlighterCore({
+		themes: [githubLight, githubDark],
+		langs: [],
+		engine: createJavaScriptRegexEngine()
 	});
 	return highlighterPromise;
 }
 
-async function ensureLanguageLoaded(highlighter: ShikiHighlighter, lang: string) {
-	if (lang === 'text') return;
+async function ensureLanguageLoaded(highlighter: HighlighterCore, lang: SupportedLanguage) {
 	if (highlighter.getLoadedLanguages().includes(lang)) return;
-	await highlighter.loadLanguage(lang as BundledLanguage);
+	await highlighter.loadLanguage(await LANGUAGE_LOADERS[lang]());
+}
+
+function isSupportedLanguage(lang: string): lang is SupportedLanguage {
+	return lang in LANGUAGE_LOADERS;
 }
 
 function renderKatex(token: MathToken): string {

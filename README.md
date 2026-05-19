@@ -146,6 +146,16 @@ node build
 | `npm run build` | 本番ビルド |
 | `npm run preview` | 本番ビルドのローカル確認 |
 | `npm run check` | 型・Svelte チェック |
+| `npm run test:e2e` | Playwright E2E スモークテスト |
+
+E2E を初めて実行する環境では、先に Playwright のブラウザを導入してください。
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+E2E は `sample-notes/` を `.tmp/e2e-notes/` にコピーし、そのコピーを `NOTES_DIR` として使います。
 
 ## トラブルシューティング
 

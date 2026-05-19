@@ -3,21 +3,19 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import holiday_jp from '@holiday-jp/holiday_jp';
 import { getNotesDir } from '$lib/server/notes-dir';
-import {
-	WEEKDAYS,
-	type CalendarEvent,
-	type DateMoveEvent,
-	type DaySwapEvent,
-	type PeriodOverrideEvent,
-	type PublicHoliday,
-	type SchoolHolidayEvent,
-	type Weekday
+import type {
+	CalendarEvent,
+	DateMoveEvent,
+	DaySwapEvent,
+	PeriodOverrideEvent,
+	PublicHoliday,
+	SchoolHolidayEvent
 } from '$lib/types';
 import { generateEventId, parseDate, weekdayFromDate } from '$lib/calendar';
+import { DATE_ONLY, isObject, isWeekday } from '$lib/server/validators';
 import type { RequestHandler } from './$types';
 
 const CALENDAR_FILE = 'calendar.json';
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 interface CalendarStore {
 	version: 1;
@@ -26,14 +24,6 @@ interface CalendarStore {
 
 function calendarPath(): string {
 	return path.join(getNotesDir(), CALENDAR_FILE);
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isWeekday(value: unknown): value is Weekday {
-	return typeof value === 'string' && (WEEKDAYS as readonly string[]).includes(value);
 }
 
 function isValidEvent(value: unknown): value is CalendarEvent {

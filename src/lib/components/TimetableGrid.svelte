@@ -1,14 +1,21 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Loader2, Pencil, Settings } from 'lucide-svelte';
-	import type { Timetable, TimetableSettings, TimetableSlot, TimetableTerm, TreeNode } from '$lib/types';
+	import {
+		WEEKDAYS,
+		type Timetable,
+		type TimetableSettings,
+		type TimetableSlot,
+		type TimetableTerm,
+		type TreeNode
+	} from '$lib/types';
 	import { cn } from '$lib/utils';
 	import { collectSubjectDirectories, persistTimetableSlot } from '$lib/timetable-client';
 	import { newNote } from '$lib/stores/new-note.svelte';
 	import TermSettingsModal from './TermSettingsModal.svelte';
 	import TimetableSlotEditor from './TimetableSlotEditor.svelte';
 
-	const DAYS = ['月', '火', '水', '木', '金'] as const;
+	const DAYS = WEEKDAYS;
 	const PERIODS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
 	type Day = (typeof DAYS)[number];
 
@@ -119,14 +126,6 @@
 	<div class="mb-3 flex items-center justify-between">
 		<div class="min-w-0">
 			<h2 class="text-sm font-semibold">時間割</h2>
-			{#if viewedTerm}
-				<p class="mt-0.5 truncate text-xs text-muted-foreground">
-					表示中: {viewedTerm.label} ({viewedTerm.startsAt}〜{viewedTerm.endsAt})
-					{#if activeTerm && activeTerm.id !== viewedTerm.id}
-						<span class="ml-1">今季: {activeTerm.label}</span>
-					{/if}
-				</p>
-			{/if}
 		</div>
 		<div class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
 			{#if saving}
@@ -170,7 +169,7 @@
 	{/if}
 
 	<div class="overflow-x-auto">
-		<table class="w-full table-fixed border-collapse text-sm">
+		<table class="w-full table-fixed border-collapse border border-black text-sm">
 			<thead>
 				<tr>
 					<th class="w-10 border-b border-r bg-muted/50 px-2 py-1 text-xs font-medium text-muted-foreground"></th>

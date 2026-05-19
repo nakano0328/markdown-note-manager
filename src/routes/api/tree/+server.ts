@@ -19,34 +19,35 @@ const TREE_TYPE_ORDER: Record<TreeNode['type'], number> = {
 async function buildTree(absDir: string, root: string): Promise<TreeNode[]> {
 	const entries = await fs.readdir(absDir, { withFileTypes: true });
 
-	const nodes: TreeNode[] = [];
-	for (const entry of entries) {
-		if (IGNORED.has(entry.name)) continue;
-		if (entry.name.startsWith('.')) continue;
+	const results = await Promise.all(
+		entries.map(async (entry): Promise<TreeNode | null> => {
+			if (IGNORED.has(entry.name)) return null;
+			if (entry.name.startsWith('.')) return null;
 
-		const absPath = path.join(absDir, entry.name);
-		const relPath = path.relative(root, absPath);
+			const absPath = path.join(absDir, entry.name);
+			const relPath = path.relative(root, absPath);
 
-		if (entry.isDirectory()) {
-			const children = await buildTree(absPath, root);
-			nodes.push({
-				name: entry.name,
-				path: relPath,
-				type: 'directory',
-				children
-			});
-		} else if (entry.isFile()) {
-			const type = VISIBLE_FILE_TYPES[path.extname(entry.name).toLowerCase()];
-			if (!type) continue;
+			if (entry.isDirectory()) {
+				const children = await buildTree(absPath, root);
+				return {
+					name: entry.name,
+					path: relPath,
+					type: 'directory',
+					children
+				};
+			}
 
-			nodes.push({
-				name: entry.name,
-				path: relPath,
-				type
-			});
-		}
-	}
+			if (entry.isFile()) {
+				const type = VISIBLE_FILE_TYPES[path.extname(entry.name).toLowerCase()];
+				if (!type) return null;
+				return { name: entry.name, path: relPath, type };
+			}
 
+			return null;
+		})
+	);
+
+	const nodes = results.filter((node): node is TreeNode => node !== null);
 	nodes.sort((a, b) => {
 		if (a.type !== b.type) return TREE_TYPE_ORDER[a.type] - TREE_TYPE_ORDER[b.type];
 		return a.name.localeCompare(b.name, 'ja');

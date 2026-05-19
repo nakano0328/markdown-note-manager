@@ -22,38 +22,52 @@
 		onScrollRatioChange
 	}: Props = $props();
 
+	const RENDER_DEBOUNCE_MS = 150;
+
 	let html = $state('');
 	let renderError = $state<string | null>(null);
 	let rendering = $state(false);
 	let previewScroller = $state<HTMLDivElement | null>(null);
 	let syncingScroll = false;
 	let renderId = 0;
+	let lastRenderedSource: string | null = null;
+	let lastRenderedPath: string | null = null;
 
 	$effect(() => {
 		const source = content;
 		const path = filePath;
+
+		// 既にレンダリング済みの内容と一致する場合は再描画しない
+		if (source === lastRenderedSource && path === lastRenderedPath) return;
+
 		let cancelled = false;
 		const id = ++renderId;
+		// 入力が止まるまで描画を遅らせる
+		const timer = setTimeout(() => {
+			if (cancelled) return;
+			rendering = true;
+			renderError = null;
 
-		rendering = true;
-		renderError = null;
-
-		renderMarkdown(source, { filePath: path })
-			.then((nextHtml) => {
-				if (cancelled || id !== renderId) return;
-				html = nextHtml;
-			})
-			.catch((e) => {
-				if (cancelled || id !== renderId) return;
-				renderError = e instanceof Error ? e.message : 'プレビューの生成に失敗しました';
-			})
-			.finally(() => {
-				if (cancelled || id !== renderId) return;
-				rendering = false;
-			});
+			renderMarkdown(source, { filePath: path })
+				.then((nextHtml) => {
+					if (cancelled || id !== renderId) return;
+					html = nextHtml;
+					lastRenderedSource = source;
+					lastRenderedPath = path;
+				})
+				.catch((e) => {
+					if (cancelled || id !== renderId) return;
+					renderError = e instanceof Error ? e.message : 'プレビューの生成に失敗しました';
+				})
+				.finally(() => {
+					if (cancelled || id !== renderId) return;
+					rendering = false;
+				});
+		}, RENDER_DEBOUNCE_MS);
 
 		return () => {
 			cancelled = true;
+			clearTimeout(timer);
 		};
 	});
 

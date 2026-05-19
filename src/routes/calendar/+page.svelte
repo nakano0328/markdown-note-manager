@@ -15,12 +15,17 @@
 	} from 'lucide-svelte';
 	import TermSettingsModal from '$lib/components/TermSettingsModal.svelte';
 	import TimetableSlotEditor from '$lib/components/TimetableSlotEditor.svelte';
-	import { collectSubjectDirectories, persistTimetableSlot } from '$lib/timetable-client';
+	import {
+		collectSubjectDirectories,
+		directoryName,
+		persistTimetableSlot
+	} from '$lib/timetable-client';
 	import {
 		PERIODS,
 		buildMonthGrid,
 		formatLocalDate,
 		isSameMonth,
+		parseDate,
 		resolveDaySchedule
 	} from '$lib/calendar';
 	import { WEEKDAYS } from '$lib/types';
@@ -76,10 +81,10 @@
 	let slotEditing = $state<{ day: Weekday; period: string } | null>(null);
 	let slotSaving = $state(false);
 	let slotError = $state<string | null>(null);
+	let timetableRequestId = 0;
+	let calendarRequestId = 0;
 
 	const monthGrid = $derived(buildMonthGrid(monthAnchor));
-	const monthRangeFrom = $derived(monthGrid[0]);
-	const monthRangeTo = $derived(monthGrid[monthGrid.length - 1]);
 	const monthTitle = $derived.by(() => {
 		const [y, m] = monthAnchor.split('-');
 		return `${y}年 ${Number(m)}月`;
@@ -96,10 +101,6 @@
 		} catch {
 			directories = [];
 		}
-	}
-
-	function directoryName(directory: string): string {
-		return directory.split('/').filter(Boolean).at(-1) ?? directory;
 	}
 
 	function openSlotEditor(day: Weekday, period: string) {
@@ -145,13 +146,13 @@
 		pickTermForDate(selectedDate)?.id ?? viewedTerm?.id ?? ''
 	);
 
-	async function loadTimetable() {
+	async function loadTimetable(anchor = monthAnchor) {
+		const id = ++timetableRequestId;
 		loadingTimetable = true;
 		timetableError = null;
 		try {
 			const params = new URLSearchParams();
-			const probeTerm = pickTermForDate(monthAnchor);
-			if (probeTerm) params.set('termId', probeTerm.id);
+			params.set('date', anchor);
 			const res = await fetch(`/api/timetable${params.size ? `?${params}` : ''}`);
 			if (!res.ok) {
 				const body = await res.json().catch(() => ({ message: res.statusText }));
@@ -163,14 +164,16 @@
 				activeTerm: TimetableTerm;
 				viewedTerm: TimetableTerm;
 			};
+			if (id !== timetableRequestId) return;
 			timetable = data.timetable ?? {};
 			timetableSettings = data.settings;
 			activeTerm = data.activeTerm;
 			viewedTerm = data.viewedTerm;
 		} catch (e) {
+			if (id !== timetableRequestId) return;
 			timetableError = e instanceof Error ? e.message : 'Unknown error';
 		} finally {
-			loadingTimetable = false;
+			if (id === timetableRequestId) loadingTimetable = false;
 		}
 	}
 
@@ -203,43 +206,55 @@
 		);
 	}
 
-	async function loadCalendar() {
+	async function loadCalendar(anchor = monthAnchor) {
+		const id = ++calendarRequestId;
+		const grid = buildMonthGrid(anchor);
+		const from = grid[0];
+		const to = grid[grid.length - 1];
 		loadingCalendar = true;
 		calendarError = null;
 		try {
-			const res = await fetch(`/api/calendar?from=${monthRangeFrom}&to=${monthRangeTo}`);
+			const res = await fetch(`/api/calendar?from=${from}&to=${to}`);
 			if (!res.ok) {
 				const body = await res.json().catch(() => ({ message: res.statusText }));
 				throw new Error(body.message ?? `Failed to load calendar (${res.status})`);
 			}
 			const data = (await res.json()) as { events: CalendarEvent[]; holidays: PublicHoliday[] };
+			if (id !== calendarRequestId) return;
 			events = data.events;
 			holidays = data.holidays;
 		} catch (e) {
+			if (id !== calendarRequestId) return;
 			calendarError = e instanceof Error ? e.message : 'Unknown error';
 		} finally {
-			loadingCalendar = false;
+			if (id === calendarRequestId) loadingCalendar = false;
 		}
 	}
 
+	async function loadMonth(anchor = monthAnchor) {
+		await Promise.all([loadTimetable(anchor), loadCalendar(anchor)]);
+	}
+
+	function setMonth(anchor: string, dateToSelect = anchor) {
+		monthAnchor = anchor;
+		selectedDate = dateToSelect;
+		void loadMonth(anchor);
+	}
+
 	function goPrevMonth() {
-		const d = new Date(monthAnchor);
+		const d = parseDate(monthAnchor);
 		d.setMonth(d.getMonth() - 1, 1);
-		monthAnchor = formatLocalDate(d);
-		void loadCalendar();
+		setMonth(formatLocalDate(d));
 	}
 
 	function goNextMonth() {
-		const d = new Date(monthAnchor);
+		const d = parseDate(monthAnchor);
 		d.setMonth(d.getMonth() + 1, 1);
-		monthAnchor = formatLocalDate(d);
-		void loadCalendar();
+		setMonth(formatLocalDate(d));
 	}
 
 	function goToday() {
-		monthAnchor = today.slice(0, 7) + '-01';
-		selectedDate = today;
-		void loadCalendar();
+		setMonth(today.slice(0, 7) + '-01', today);
 	}
 
 	function weekdayLabelOf(date: string): string {
@@ -255,7 +270,7 @@
 			type,
 			title: '',
 			note: '',
-			followsDay: (wd as Weekday) in timetable ? (wd as Weekday) : '月',
+			followsDay: wd as Weekday,
 			fromDate: '',
 			period: '1',
 			slotMode: 'cancel',
@@ -334,8 +349,6 @@
 			const fromDate = draftValue.fromDate.trim();
 			if (!fromDate) return '移動元の日付を選択してください';
 			if (fromDate === draftValue.date) return '移動元と移動先は別の日付を指定してください';
-			const wd = new Date(fromDate).getDay();
-			if (wd === 0 || wd === 6) return '移動元は平日 (月〜金) を指定してください';
 			base.fromDate = fromDate;
 			if (draftValue.title.trim()) base.title = draftValue.title.trim();
 			return base;
@@ -419,8 +432,7 @@
 
 	onMount(() => {
 		void loadDirectories();
-		void loadTimetable();
-		void loadCalendar();
+		void loadMonth();
 	});
 </script>
 

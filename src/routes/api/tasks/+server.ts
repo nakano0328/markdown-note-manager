@@ -11,17 +11,21 @@ const TASK_LINE = /^(\s*[-*+]\s+\[)([ xX])(\]\s+)(.+?)(\s*)$/;
 
 async function walkMarkdown(absDir: string, root: string, out: string[]): Promise<void> {
 	const entries = await fs.readdir(absDir, { withFileTypes: true });
+	const subDirs: string[] = [];
+
 	for (const entry of entries) {
 		if (IGNORED_DIRS.has(entry.name)) continue;
 		if (entry.name.startsWith('.')) continue;
 
 		const abs = path.join(absDir, entry.name);
 		if (entry.isDirectory()) {
-			await walkMarkdown(abs, root, out);
+			subDirs.push(abs);
 		} else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
 			out.push(path.relative(root, abs));
 		}
 	}
+
+	await Promise.all(subDirs.map((dir) => walkMarkdown(dir, root, out)));
 }
 
 function deriveSubject(relPath: string): string {
@@ -79,16 +83,18 @@ export const GET: RequestHandler = async () => {
 		throw e;
 	}
 
-	const tasks: TaskItem[] = [];
-	for (const rel of files) {
-		try {
-			const abs = path.join(root, rel);
-			const fileTasks = await extractTasks(abs, rel);
-			tasks.push(...fileTasks);
-		} catch {
-			// 単一ファイルの読込失敗は無視して続行
-		}
-	}
+	const perFileTasks = await Promise.all(
+		files.map(async (rel) => {
+			try {
+				const abs = path.join(root, rel);
+				return await extractTasks(abs, rel);
+			} catch {
+				// 単一ファイルの読込失敗は無視して続行
+				return [];
+			}
+		})
+	);
+	const tasks = perFileTasks.flat();
 
 	return json({ tasks });
 };

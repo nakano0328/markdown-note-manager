@@ -33,8 +33,7 @@ export function addDays(date: string, days: number): string {
 
 export function weekdayFromDate(date: string): Weekday | null {
 	const idx = parseDate(date).getDay();
-	if (idx >= 1 && idx <= 5) return WEEKDAYS[idx - 1];
-	return null;
+	return WEEKDAYS[(idx + 6) % 7] ?? null;
 }
 
 export function startOfWeekMonday(date: string): string {
@@ -86,7 +85,8 @@ export function resolveDaySchedule(
 	holidays: PublicHoliday[]
 ): DaySchedule {
 	const weekday = weekdayFromDate(date);
-	const isWeekend = weekday === null;
+	const dayIndex = parseDate(date).getDay();
+	const isWeekend = dayIndex === 0 || dayIndex === 6;
 	const dayEvents = events.filter((event) => event.date === date);
 	const schoolHoliday =
 		(dayEvents.find((event) => event.type === 'school_holiday') as SchoolHolidayEvent | undefined) ??
