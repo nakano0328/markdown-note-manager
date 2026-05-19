@@ -16,6 +16,7 @@
 	} from 'lucide-svelte';
 	import { cn } from '$lib/utils';
 	import { newNote } from '$lib/stores/new-note.svelte';
+	import { treeState } from '$lib/stores/tree-state.svelte';
 
 	let { children } = $props();
 
@@ -212,6 +213,7 @@
 	titleHint={newNote.titleHint}
 	onClose={() => newNote.close()}
 	onCreated={(note) => {
+		treeState.revealFile(note.path);
 		newNote.close();
 		void goto(`/note/${encodeNotePath(note.path)}`);
 	}}

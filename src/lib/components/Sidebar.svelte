@@ -3,6 +3,7 @@
 	import FileTreeNode from './FileTreeNode.svelte';
 	import type { TreeNode } from '$lib/types';
 	import { Loader2, RefreshCw, AlertCircle } from 'lucide-svelte';
+	import { treeState } from '$lib/stores/tree-state.svelte';
 
 	let tree = $state<TreeNode[]>([]);
 	let root = $state<string>('');
@@ -29,6 +30,11 @@
 	}
 
 	onMount(load);
+
+	$effect(() => {
+		const version = treeState.version;
+		if (version > 0) void load();
+	});
 </script>
 
 <aside class="flex h-full flex-col border-r bg-sidebar-bg">

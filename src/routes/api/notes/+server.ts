@@ -7,6 +7,7 @@ import type { NoteFrontmatter } from '$lib/types';
 import type { RequestHandler } from './$types';
 
 const FILENAME_PATTERN = /^(\d{2})_(.+)\.md$/;
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 interface NotePreviewBody {
 	directory?: unknown;
@@ -14,6 +15,7 @@ interface NotePreviewBody {
 }
 
 interface NoteCreateBody extends NotePreviewBody {
+	date?: unknown;
 	location?: unknown;
 	slideUrl?: unknown;
 	tags?: unknown;
@@ -82,7 +84,7 @@ async function readExistingNotes(absDir: string): Promise<ExistingNote[]> {
 				frontmatter = parsed.data as Partial<NoteFrontmatter>;
 			}
 		} catch {
-			// ignore parse failure for inheritance lookup
+			// 継承候補の探索では、壊れた Frontmatter は無視する。
 		}
 		notes.push({
 			filename: entry.name,
@@ -175,6 +177,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	const location = pickString(body.location);
 	const slideUrl = pickString(body.slideUrl);
 	const tags = pickStringArray(body.tags);
+	const date = pickString(body.date) ?? localToday();
+	if (!DATE_ONLY.test(date)) {
+		throw error(400, 'date must be YYYY-MM-DD');
+	}
 
 	const notes = await readExistingNotes(absDir);
 	const latest = notes.at(-1) ?? null;
@@ -194,7 +200,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const frontmatter: NoteFrontmatter = {
 		title: trimmedTitle,
-		date: localToday(),
+		date,
 		...(location ? { location } : {}),
 		...(slideUrl ? { slide_url: slideUrl } : {}),
 		...(tags.length > 0 ? { tags } : {})

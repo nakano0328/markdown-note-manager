@@ -29,6 +29,7 @@
 	let { open, directory, subject = '', titleHint = '', onClose, onCreated }: Props = $props();
 
 	let title = $state('');
+	let date = $state('');
 	let location = $state('');
 	let slideUrl = $state('');
 	let tagsInput = $state('');
@@ -51,6 +52,7 @@
 		initialized = true;
 		lastKey = key;
 		title = titleHint;
+		date = '';
 		location = '';
 		slideUrl = '';
 		tagsInput = '';
@@ -72,6 +74,7 @@
 			}
 			const data = (await res.json()) as PreviewState;
 			preview = data;
+			if (!date) date = data.date;
 			if (!location) location = data.location;
 			if (!tagsInput && data.tags.length > 0) tagsInput = data.tags.join(', ');
 		} catch (e) {
@@ -88,6 +91,10 @@
 			errorMessage = 'タイトルを入力してください';
 			return;
 		}
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+			errorMessage = '日付は YYYY-MM-DD 形式で入力してください';
+			return;
+		}
 		creating = true;
 		errorMessage = null;
 		try {
@@ -101,6 +108,7 @@
 				body: JSON.stringify({
 					directory,
 					title: trimmed,
+					date,
 					location: location.trim() || undefined,
 					slideUrl: slideUrl.trim() || undefined,
 					tags: tags.length > 0 ? tags : undefined
@@ -191,10 +199,9 @@
 				<label class="block">
 					<span class="mb-1 block text-xs font-medium text-muted-foreground">日付</span>
 					<input
-						type="text"
-						value={preview?.date ?? ''}
-						readonly
-						class="w-full rounded border bg-muted/30 px-2 py-1.5 text-sm text-muted-foreground"
+						type="date"
+						bind:value={date}
+						class="w-full rounded border bg-white px-2 py-1.5 text-sm focus:border-primary focus:outline-none"
 					/>
 				</label>
 
