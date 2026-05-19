@@ -15,14 +15,28 @@
 	import { tags } from '@lezer/highlight';
 	import { AlertCircle, FileText, Loader2 } from 'lucide-svelte';
 
+	type ScrollSource = 'editor' | 'preview';
+	type ImageInputSource = 'paste' | 'drop';
+
 	interface Props {
 		value?: string;
 		filePath: string;
 		loading?: boolean;
 		errorMessage?: string | null;
+		scrollRatio?: number;
+		scrollSource?: ScrollSource | null;
+		onScrollRatioChange?: (ratio: number, source: ScrollSource) => void;
 	}
 
-	let { value = $bindable(''), filePath, loading = false, errorMessage = null }: Props = $props();
+	let {
+		value = $bindable(''),
+		filePath,
+		loading = false,
+		errorMessage = null,
+		scrollRatio = 0,
+		scrollSource = null,
+		onScrollRatioChange
+	}: Props = $props();
 
 	const lineCount = $derived(value.length === 0 ? 1 : value.split('\n').length);
 	const characterCount = $derived(value.length);
@@ -30,6 +44,8 @@
 	let caretIndentLevel = $state(0);
 	let editorRoot = $state<HTMLDivElement | null>(null);
 	let editorView = $state<EditorView | null>(null);
+	let syncingScroll = false;
+	let imageUploadStatus = $state<string | null>(null);
 
 	const markdownHighlightStyle = HighlightStyle.define([
 		{
@@ -119,15 +135,31 @@
 		updateCaretIndentLevelFromView(editorView);
 	});
 
+	$effect(() => {
+		const view = editorView;
+		const ratio = scrollRatio;
+		const source = scrollSource;
+		const currentValue = value;
+		void currentValue;
+
+		if (!view || source === 'editor') return;
+
+		requestAnimationFrame(() => {
+			applyScrollRatio(view.scrollDOM, ratio);
+		});
+	});
+
 	onMount(() => {
 		if (!editorRoot) return;
 		editorView = new EditorView({
 			parent: editorRoot,
 			state: createEditorState(value)
 		});
+		editorView.scrollDOM.addEventListener('scroll', handleEditorScroll, { passive: true });
 		updateCaretIndentLevelFromView(editorView);
 
 		return () => {
+			editorView?.scrollDOM.removeEventListener('scroll', handleEditorScroll);
 			editorView?.destroy();
 			editorView = null;
 		};
@@ -144,6 +176,10 @@
 				codeBlockBgPlugin,
 				listIndentGuidePlugin,
 				EditorView.lineWrapping,
+				EditorView.domEventHandlers({
+					paste: handlePaste,
+					drop: handleDrop
+				}),
 				editorTheme,
 				EditorView.updateListener.of((update) => {
 					if (update.docChanged) {
@@ -163,6 +199,121 @@
 				keymap.of([...defaultKeymap, ...historyKeymap])
 			]
 		});
+	}
+
+	function handlePaste(event: ClipboardEvent, view: EditorView) {
+		const files = getImageFilesFromClipboard(event.clipboardData);
+		if (files.length === 0) return false;
+
+		event.preventDefault();
+		void uploadAndInsertImages(files, view, 'paste');
+		return true;
+	}
+
+	function handleDrop(event: DragEvent, view: EditorView) {
+		const files = getImageFilesFromDataTransfer(event.dataTransfer);
+		if (files.length === 0) return false;
+
+		event.preventDefault();
+		const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+		if (position !== null) {
+			view.dispatch({ selection: { anchor: position } });
+		}
+
+		void uploadAndInsertImages(files, view, 'drop');
+		return true;
+	}
+
+	function getImageFilesFromClipboard(data: DataTransfer | null) {
+		if (!data) return [];
+
+		const files: File[] = [];
+		for (const item of data.items) {
+			if (!item.type.startsWith('image/')) continue;
+			const file = item.getAsFile();
+			if (file) files.push(file);
+		}
+		return files;
+	}
+
+	function getImageFilesFromDataTransfer(data: DataTransfer | null) {
+		if (!data) return [];
+		return Array.from(data.files).filter((file) => file.type.startsWith('image/'));
+	}
+
+	async function uploadAndInsertImages(
+		files: File[],
+		view: EditorView,
+		source: ImageInputSource
+	) {
+		imageUploadStatus = source === 'paste' ? '画像を貼り付け中' : '画像を追加中';
+
+		try {
+			for (const file of files) {
+				const markdown = await uploadImage(file);
+				insertMarkdownAtSelection(view, markdown);
+			}
+			imageUploadStatus = null;
+		} catch (e) {
+			imageUploadStatus = e instanceof Error ? e.message : '画像の保存に失敗しました';
+		}
+	}
+
+	async function uploadImage(file: File) {
+		const formData = new FormData();
+		formData.append('targetPath', filePath);
+		formData.append('image', file, file.name || 'image.png');
+
+		const res = await fetch('/api/images/upload', {
+			method: 'POST',
+			body: formData
+		});
+
+		const body = (await res.json().catch(() => ({ message: res.statusText }))) as {
+			markdown?: string;
+			message?: string;
+		};
+
+		if (!res.ok || !body.markdown) {
+			throw new Error(body.message ?? `画像の保存に失敗しました (${res.status})`);
+		}
+
+		return body.markdown;
+	}
+
+	function insertMarkdownAtSelection(view: EditorView, markdown: string) {
+		const selection = view.state.selection.main;
+		const insertion = markdown;
+		view.dispatch({
+			changes: { from: selection.from, to: selection.to, insert: insertion },
+			selection: { anchor: selection.from + insertion.length },
+			scrollIntoView: true
+		});
+		view.focus();
+	}
+
+	function handleEditorScroll() {
+		const view = editorView;
+		if (!view || syncingScroll) return;
+		onScrollRatioChange?.(getScrollRatio(view.scrollDOM), 'editor');
+	}
+
+	function applyScrollRatio(element: HTMLElement, ratio: number) {
+		const maxScroll = element.scrollHeight - element.clientHeight;
+		const nextScrollTop = maxScroll <= 0 ? 0 : maxScroll * ratio;
+		if (Math.abs(element.scrollTop - nextScrollTop) < 1) return;
+
+		syncingScroll = true;
+		element.scrollTop = nextScrollTop;
+		requestAnimationFrame(() => {
+			syncingScroll = false;
+		});
+	}
+
+	function getScrollRatio(element: HTMLElement) {
+		const maxScroll = element.scrollHeight - element.clientHeight;
+		if (maxScroll <= 0) return 0;
+		return element.scrollTop / maxScroll;
 	}
 
 	const codeBlockBgPlugin = ViewPlugin.fromClass(
@@ -373,6 +524,14 @@
 			<div class="min-w-0 truncate text-sm font-medium" title={filePath}>エディタ</div>
 		</div>
 		<div class="flex shrink-0 items-center gap-2 text-xs tabular-nums text-muted-foreground">
+			{#if imageUploadStatus}
+				<span
+					class="max-w-40 truncate rounded border bg-white px-1.5 py-0.5 text-black"
+					title={imageUploadStatus}
+				>
+					{imageUploadStatus}
+				</span>
+			{/if}
 			<span class="rounded border bg-white px-1.5 py-0.5 text-black">Tab {caretIndentLevel}</span>
 			<span>{lineCount} 行 / {characterCount} 字</span>
 		</div>

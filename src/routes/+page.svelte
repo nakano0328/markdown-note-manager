@@ -13,7 +13,7 @@
 		<ul class="mt-2 space-y-1 text-muted-foreground">
 			<li><span class="font-medium text-foreground">Phase 1</span>: 基盤構築とツリー表示（実装済）</li>
 			<li><span class="font-medium text-foreground">Phase 2</span>: エディタとプレビュー（実装済）</li>
-			<li>Phase 3: 自動保存と画像ペースト</li>
+			<li><span class="font-medium text-foreground">Phase 3</span>: 自動保存と画像ペースト（実装済）</li>
 			<li>Phase 4: ダッシュボード・時間割・タスク抽出</li>
 			<li>Phase 5: Smart Frontmatter と Git 同期</li>
 		</ul>
