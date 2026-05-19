@@ -144,3 +144,8 @@ vite.config.ts.timestamp-*
 
 build/
 .claude/
+
+# Local timetable / calendar state (per-user, stored under NOTES_DIR)
+timetable.json
+timetable-settings.json
+calendar.json
