@@ -1,6 +1,17 @@
 <script lang="ts">
-	import { Loader2, AlertCircle, FileText, RefreshCw, CheckCircle2 } from 'lucide-svelte';
-	import type { TaskItem } from '$lib/types';
+	import {
+		Loader2,
+		AlertCircle,
+		FileText,
+		RefreshCw,
+		CheckCircle2,
+		CalendarClock,
+		ChevronUp,
+		Equal,
+		ChevronDown
+	} from 'lucide-svelte';
+	import type { TaskItem, TaskPriority } from '$lib/types';
+	import { formatLocalDate } from '$lib/calendar';
 	import { cn } from '$lib/utils';
 
 	interface Props {
@@ -17,20 +28,113 @@
 	let toggleError = $state<string | null>(null);
 	let updatingTaskIds = $state<Set<string>>(new Set());
 
+	const today = formatLocalDate(new Date());
+
+	type Bucket =
+		| 'overdue'
+		| 'today'
+		| 'within3'
+		| 'within7'
+		| 'later'
+		| 'undated';
+
+	const BUCKET_LABEL: Record<Bucket, string> = {
+		overdue: '期限切れ',
+		today: '今日',
+		within3: '3日以内',
+		within7: '今週',
+		later: 'これ以降',
+		undated: '期限なし'
+	};
+
+	const BUCKET_ORDER: Bucket[] = ['overdue', 'today', 'within3', 'within7', 'later', 'undated'];
+
+	const BUCKET_STYLE: Record<Bucket, string> = {
+		overdue: 'border-red-300 bg-red-50 text-red-900',
+		today: 'border-amber-300 bg-amber-50 text-amber-900',
+		within3: 'border-yellow-200 bg-yellow-50 text-yellow-900',
+		within7: 'border-sky-200 bg-sky-50 text-sky-900',
+		later: 'border-muted bg-muted/30 text-foreground',
+		undated: 'border-muted bg-white text-muted-foreground'
+	};
+
+	function daysBetween(a: string, b: string): number {
+		const da = new Date(a + 'T00:00:00');
+		const db = new Date(b + 'T00:00:00');
+		return Math.round((db.getTime() - da.getTime()) / 86_400_000);
+	}
+
+	function classify(task: TaskItem): Bucket {
+		if (!task.dueDate) return 'undated';
+		const diff = daysBetween(today, task.dueDate);
+		if (diff < 0) return 'overdue';
+		if (diff === 0) return 'today';
+		if (diff <= 3) return 'within3';
+		if (diff <= 7) return 'within7';
+		return 'later';
+	}
+
+	function priorityRank(p: TaskPriority | null): number {
+		switch (p) {
+			case 'high':
+				return 0;
+			case 'medium':
+				return 1;
+			case 'low':
+				return 2;
+			default:
+				return 3;
+		}
+	}
+
+	function compareTasks(a: TaskItem, b: TaskItem): number {
+		if (a.dueDate && b.dueDate) {
+			if (a.dueDate !== b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+		} else if (a.dueDate) {
+			return -1;
+		} else if (b.dueDate) {
+			return 1;
+		}
+		const pr = priorityRank(a.priority) - priorityRank(b.priority);
+		if (pr !== 0) return pr;
+		return a.subject.localeCompare(b.subject, 'ja');
+	}
+
 	const visibleTasks = $derived(showCompleted ? tasks : tasks.filter((t) => !t.isCompleted));
 	const pendingCount = $derived(tasks.filter((t) => !t.isCompleted).length);
-	const groupedTasks = $derived.by(() => {
-		const groups = new Map<string, TaskItem[]>();
+	const overdueCount = $derived(
+		tasks.filter((t) => !t.isCompleted && classify(t) === 'overdue').length
+	);
+	const todayCount = $derived(
+		tasks.filter((t) => !t.isCompleted && classify(t) === 'today').length
+	);
+
+	const bucketedTasks = $derived.by(() => {
+		const map = new Map<Bucket, TaskItem[]>();
 		for (const task of visibleTasks) {
-			const arr = groups.get(task.subject) ?? [];
+			const b = classify(task);
+			const arr = map.get(b) ?? [];
 			arr.push(task);
-			groups.set(task.subject, arr);
+			map.set(b, arr);
 		}
-		return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0], 'ja'));
+		for (const arr of map.values()) arr.sort(compareTasks);
+		return BUCKET_ORDER.flatMap((b) => {
+			const items = map.get(b);
+			return items && items.length > 0 ? [{ bucket: b, items }] : [];
+		});
 	});
 
 	function encodeFilePath(filePath: string): string {
 		return filePath.split('/').map(encodeURIComponent).join('/');
+	}
+
+	function dueLabel(dateStr: string): string {
+		const diff = daysBetween(today, dateStr);
+		if (diff === 0) return '今日';
+		if (diff === 1) return '明日';
+		if (diff === -1) return '昨日';
+		if (diff < 0) return `${-diff}日経過`;
+		return `あと${diff}日`;
 	}
 
 	async function handleToggle(task: TaskItem, isCompleted: boolean) {
@@ -50,11 +154,21 @@
 
 <section class="rounded-lg border bg-white p-4">
 	<div class="mb-3 flex items-center justify-between">
-		<h2 class="text-sm font-semibold">
+		<h2 class="flex items-center gap-2 text-sm font-semibold">
 			未完了の課題
-			<span class="ml-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+			<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
 				{pendingCount}
 			</span>
+			{#if overdueCount > 0}
+				<span class="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">
+					期限切れ {overdueCount}
+				</span>
+			{/if}
+			{#if todayCount > 0}
+				<span class="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+					今日 {todayCount}
+				</span>
+			{/if}
 		</h2>
 		<div class="flex items-center gap-2">
 			<label class="flex items-center gap-1 text-xs text-muted-foreground">
@@ -98,15 +212,21 @@
 			</div>
 		{:else}
 			<div class="space-y-3">
-				{#each groupedTasks as [subject, items] (subject)}
-					<div>
-						<div class="mb-1 text-xs font-semibold text-muted-foreground">{subject}</div>
+				{#each bucketedTasks as group (group.bucket)}
+					<div class={cn('rounded border p-2', BUCKET_STYLE[group.bucket])}>
+						<div class="mb-1 flex items-center gap-2 text-xs font-semibold">
+							<CalendarClock class="size-3.5" />
+							{BUCKET_LABEL[group.bucket]}
+							<span class="rounded bg-white/60 px-1 py-0.5 text-[10px] font-medium">
+								{group.items.length}
+							</span>
+						</div>
 						<ul class="space-y-1">
-							{#each items as task (task.id)}
+							{#each group.items as task (task.id)}
 								<li
 									class={cn(
-										'flex items-start gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent',
-										task.isCompleted && 'text-muted-foreground line-through'
+										'flex items-start gap-2 rounded bg-white/80 px-2 py-1.5 text-sm hover:bg-white',
+										task.isCompleted && 'text-muted-foreground line-through opacity-70'
 									)}
 								>
 									<input
@@ -118,14 +238,40 @@
 										onchange={(event) => void handleToggle(task, event.currentTarget.checked)}
 									/>
 									<div class="min-w-0 flex-1">
-										<div class="break-words">{task.content}</div>
-										<a
-											href={`/note/${encodeFilePath(task.filePath)}`}
-											class="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground hover:underline"
-										>
-											<FileText class="size-3" />
-											{task.filePath}:{task.lineNumber}
-										</a>
+										<div class="flex flex-wrap items-center gap-1.5">
+											{#if task.priority === 'high'}
+												<ChevronUp class="size-3.5 text-red-600" aria-label="優先度 高" />
+											{:else if task.priority === 'medium'}
+												<Equal class="size-3.5 text-amber-600" aria-label="優先度 中" />
+											{:else if task.priority === 'low'}
+												<ChevronDown class="size-3.5 text-sky-600" aria-label="優先度 低" />
+											{/if}
+											<span class="break-words text-foreground">{task.content}</span>
+											{#if task.dueDate}
+												<span
+													class={cn(
+														'rounded px-1.5 py-0.5 text-[10px] font-medium',
+														group.bucket === 'overdue'
+															? 'bg-red-200 text-red-900'
+															: group.bucket === 'today'
+																? 'bg-amber-200 text-amber-900'
+																: 'bg-muted text-muted-foreground'
+													)}
+												>
+													{task.dueDate}（{dueLabel(task.dueDate)}）
+												</span>
+											{/if}
+										</div>
+										<div class="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+											<span class="font-medium">{task.subject}</span>
+											<a
+												href={`/note/${encodeFilePath(task.filePath)}`}
+												class="inline-flex items-center gap-1 hover:text-foreground hover:underline"
+											>
+												<FileText class="size-3" />
+												{task.filePath}:{task.lineNumber}
+											</a>
+										</div>
 									</div>
 								</li>
 							{/each}

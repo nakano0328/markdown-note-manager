@@ -22,11 +22,19 @@ export interface TimetableTerm {
 	endsAt: string;
 }
 
+export interface PeriodTime {
+	start: string;
+	end: string;
+}
+
 export interface TimetableSettings {
 	version: 1;
 	activeTermId: string;
 	terms: TimetableTerm[];
+	periodTimes?: PeriodTime[];
 }
+
+export type TaskPriority = 'high' | 'medium' | 'low';
 
 export interface TaskItem {
 	id: string;
@@ -35,6 +43,8 @@ export interface TaskItem {
 	subject: string;
 	content: string;
 	isCompleted: boolean;
+	dueDate: string | null;
+	priority: TaskPriority | null;
 }
 
 export const WEEKDAYS = ['月', '火', '水', '木', '金', '土', '日'] as const;

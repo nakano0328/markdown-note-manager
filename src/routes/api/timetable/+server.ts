@@ -10,6 +10,7 @@ import {
 	ensureTerm,
 	ensureTermForDate,
 	generateTermId,
+	isValidPeriodTime,
 	isValidSettings,
 	isValidTerm,
 	normalizeSettings,
@@ -17,7 +18,8 @@ import {
 	resolveActiveTermId,
 	termRange
 } from '$lib/server/timetable-terms';
-import type { Timetable, TimetableSettings, TimetableTerm } from '$lib/types';
+import { MAX_PERIODS } from '$lib/period-times';
+import type { PeriodTime, Timetable, TimetableSettings, TimetableTerm } from '$lib/types';
 import type { RequestHandler } from './$types';
 
 const TIMETABLE_FILE = 'timetable.json';
@@ -258,6 +260,21 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 };
 
+function sanitizePeriodTimes(input: unknown): PeriodTime[] {
+	if (!Array.isArray(input)) throw error(400, 'periodTimes must be an array');
+	if (input.length === 0) throw error(400, 'periodTimes must include at least 1 period');
+	if (input.length > MAX_PERIODS) {
+		throw error(400, `periodTimes must include at most ${MAX_PERIODS} periods`);
+	}
+	const result: PeriodTime[] = [];
+	for (const entry of input) {
+		if (!isValidPeriodTime(entry)) throw error(400, 'periodTimes entry is invalid');
+		const e = entry as { start: string; end: string };
+		result.push({ start: e.start, end: e.end });
+	}
+	return result;
+}
+
 export const PATCH: RequestHandler = async ({ request }) => {
 	type TermPayload = {
 		id?: unknown;
@@ -268,48 +285,61 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	const body = (await request.json()) as {
 		term?: TermPayload;
 		activeTerm?: TermPayload;
+		periodTimes?: unknown;
 	};
 
-	const termBody = isObject(body.term) ? body.term : body.activeTerm;
-	if (!isObject(termBody)) {
-		throw error(400, 'term is required');
+	const hasTerm = isObject(body.term) || isObject(body.activeTerm);
+	const hasPeriodTimes = body.periodTimes !== undefined;
+	if (!hasTerm && !hasPeriodTimes) {
+		throw error(400, 'term or periodTimes is required');
 	}
 
 	try {
 		const settings = await readSettings();
-		const id = typeof termBody.id === 'string' && termBody.id ? termBody.id : null;
-		const existingIndex = id ? settings.terms.findIndex((term) => term.id === id) : -1;
-		const existing = existingIndex >= 0 ? settings.terms[existingIndex] : null;
+		let viewedTermId = settings.activeTermId;
 
-		const startsAt =
-			typeof termBody.startsAt === 'string' ? termBody.startsAt : existing?.startsAt;
-		const endsAt = typeof termBody.endsAt === 'string' ? termBody.endsAt : existing?.endsAt;
-		if (!startsAt || !endsAt) throw error(400, 'startsAt and endsAt are required');
+		if (hasTerm) {
+			const termBody = (isObject(body.term) ? body.term : body.activeTerm) as TermPayload;
+			const id = typeof termBody.id === 'string' && termBody.id ? termBody.id : null;
+			const existingIndex = id ? settings.terms.findIndex((term) => term.id === id) : -1;
+			const existing = existingIndex >= 0 ? settings.terms[existingIndex] : null;
 
-		const next: TimetableTerm = {
-			id: existing?.id ?? generateTermId(settings.terms, startsAt),
-			label:
-				typeof termBody.label === 'string' && termBody.label.trim()
-					? termBody.label.trim()
-					: (existing?.label ?? '新しい学期'),
-			startsAt,
-			endsAt
-		};
+			const startsAt =
+				typeof termBody.startsAt === 'string' ? termBody.startsAt : existing?.startsAt;
+			const endsAt = typeof termBody.endsAt === 'string' ? termBody.endsAt : existing?.endsAt;
+			if (!startsAt || !endsAt) throw error(400, 'startsAt and endsAt are required');
 
-		if (!isValidTerm(next)) throw error(400, 'term has invalid values');
+			const next: TimetableTerm = {
+				id: existing?.id ?? generateTermId(settings.terms, startsAt),
+				label:
+					typeof termBody.label === 'string' && termBody.label.trim()
+						? termBody.label.trim()
+						: (existing?.label ?? '新しい学期'),
+				startsAt,
+				endsAt
+			};
 
-		const nextTerms =
-			existingIndex >= 0
-				? settings.terms.map((term, index) => (index === existingIndex ? next : term))
-				: [...settings.terms, next];
-		assertTermRangesValid(nextTerms);
+			if (!isValidTerm(next)) throw error(400, 'term has invalid values');
 
-		settings.terms = orderedTerms(nextTerms);
-		resolveActiveTermId(settings, localToday());
+			const nextTerms =
+				existingIndex >= 0
+					? settings.terms.map((term, index) => (index === existingIndex ? next : term))
+					: [...settings.terms, next];
+			assertTermRangesValid(nextTerms);
+
+			settings.terms = orderedTerms(nextTerms);
+			resolveActiveTermId(settings, localToday());
+			viewedTermId = next.id;
+		}
+
+		if (hasPeriodTimes) {
+			settings.periodTimes = sanitizePeriodTimes(body.periodTimes);
+		}
+
 		await writeSettings(settingsPath(), settings);
 
 		const store = await readStore(settings.activeTermId);
-		return json(responseFor(settings, store, next.id));
+		return json(responseFor(settings, store, viewedTermId));
 	} catch (e) {
 		if (e && typeof e === 'object' && 'status' in e) throw e;
 		throw error(500, e instanceof Error ? e.message : 'Failed to update timetable settings');

@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Loader2, Pencil, Settings } from 'lucide-svelte';
+	import { Clock, Loader2, Pencil, Settings } from 'lucide-svelte';
 	import {
 		WEEKDAYS,
+		type PeriodTime,
 		type Timetable,
 		type TimetableSettings,
 		type TimetableSlot,
@@ -12,11 +13,12 @@
 	import { cn } from '$lib/utils';
 	import { collectSubjectDirectories, persistTimetableSlot } from '$lib/timetable-client';
 	import { newNote } from '$lib/stores/new-note.svelte';
+	import { effectivePeriodTimes, enabledPeriods } from '$lib/period-times';
 	import TermSettingsModal from './TermSettingsModal.svelte';
+	import PeriodTimesModal from './PeriodTimesModal.svelte';
 	import TimetableSlotEditor from './TimetableSlotEditor.svelte';
 
 	const DAYS = WEEKDAYS;
-	const PERIODS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
 	type Day = (typeof DAYS)[number];
 
 	interface Props {
@@ -28,6 +30,7 @@
 		onChange: (next: Timetable) => Promise<void> | void;
 		onTermChange: (term: Partial<TimetableTerm>) => Promise<void> | void;
 		onViewedTermChange: (termId: string) => Promise<void> | void;
+		onPeriodTimesChange: (periodTimes: PeriodTime[]) => Promise<void> | void;
 	}
 
 	let {
@@ -38,16 +41,21 @@
 		viewedTerm,
 		onChange,
 		onTermChange,
-		onViewedTermChange
+		onViewedTermChange,
+		onPeriodTimesChange
 	}: Props = $props();
 
 	let directories = $state<string[]>([]);
 	let directoriesError = $state<string | null>(null);
 	let saving = $state(false);
 	let termEditorOpen = $state(false);
+	let periodTimesEditorOpen = $state(false);
 
 	let editingDay = $state<Day | null>(null);
 	let editingPeriod = $state<string | null>(null);
+
+	const periods = $derived(enabledPeriods(settings));
+	const periodTimes = $derived(effectivePeriodTimes(settings));
 
 	const orderedTerms = $derived.by(() =>
 		[...(settings?.terms ?? [])].sort((a, b) => {
@@ -150,6 +158,17 @@
 			{/if}
 			<button
 				type="button"
+				onclick={() => (periodTimesEditorOpen = true)}
+				disabled={!settings}
+				class="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
+				aria-label="授業時間"
+				title="授業時間"
+			>
+				<Clock class="size-3.5" />
+				<span class="hidden sm:inline">授業時間</span>
+			</button>
+			<button
+				type="button"
 				onclick={() => (termEditorOpen = true)}
 				disabled={!settings}
 				class="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
@@ -172,7 +191,7 @@
 		<table class="w-full table-fixed border-collapse border border-black text-sm">
 			<thead>
 				<tr>
-					<th class="w-10 border-b border-r bg-muted/50 px-2 py-1 text-xs font-medium text-muted-foreground"></th>
+					<th class="w-24 border-b border-r bg-muted/50 px-2 py-1 text-xs font-medium text-muted-foreground"></th>
 					{#each DAYS as day (day)}
 						<th
 							class={cn(
@@ -186,12 +205,18 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each PERIODS as period (period)}
+				{#each periods as period, index (period)}
+					{@const pt = periodTimes[index]}
 					<tr>
 						<th
-							class="border-b border-r bg-muted/40 px-2 py-2 text-center text-xs font-medium text-muted-foreground"
+							class="border-b border-r bg-muted/40 px-1.5 py-1 text-center text-xs font-medium text-muted-foreground"
 						>
-							{period}限
+							<div class="font-semibold text-foreground">{period}限</div>
+							{#if pt}
+								<div class="mt-0.5 whitespace-nowrap text-[10px] font-normal leading-tight tabular-nums text-muted-foreground">
+									{pt.start}〜{pt.end}
+								</div>
+							{/if}
 						</th>
 						{#each DAYS as day (day)}
 							{@const slot = timetable[day]?.[period]}
@@ -257,6 +282,13 @@
 	{viewedTerm}
 	onClose={() => (termEditorOpen = false)}
 	onSubmit={onTermChange}
+/>
+
+<PeriodTimesModal
+	open={periodTimesEditorOpen}
+	{settings}
+	onClose={() => (periodTimesEditorOpen = false)}
+	onSubmit={onPeriodTimesChange}
 />
 
 <TimetableSlotEditor

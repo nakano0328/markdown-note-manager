@@ -5,21 +5,24 @@
 		buildWeekDates,
 		formatLocalDate,
 		resolveDaySchedule,
-		startOfWeekMonday
+		startOfWeekSunday
 	} from '$lib/calendar';
-	import type { CalendarEvent, PublicHoliday, Timetable } from '$lib/types';
+	import { enabledPeriods } from '$lib/period-times';
+	import type { CalendarEvent, PublicHoliday, Timetable, TimetableSettings } from '$lib/types';
 	import { cn } from '$lib/utils';
 
 	interface Props {
 		timetable: Timetable;
+		settings: TimetableSettings | null;
 	}
 
-	let { timetable }: Props = $props();
+	let { timetable, settings }: Props = $props();
 
 	const today = formatLocalDate(new Date());
 	const weekDates = $derived(buildWeekDates(today));
-	const weekStart = $derived(startOfWeekMonday(today));
+	const weekStart = $derived(startOfWeekSunday(today));
 	const weekEnd = $derived(weekDates[weekDates.length - 1]);
+	const allowedPeriods = $derived(new Set(enabledPeriods(settings)));
 
 	let events = $state<CalendarEvent[]>([]);
 	let holidays = $state<PublicHoliday[]>([]);
@@ -140,7 +143,7 @@
 					{/if}
 
 					<ul class="mt-1 min-h-0 flex-1 space-y-0.5 overflow-hidden text-[10px]">
-						{#each schedule.periods.filter((p) => p.slot) as entry (entry.period)}
+						{#each schedule.periods.filter((p) => allowedPeriods.has(p.period) && p.slot) as entry (entry.period)}
 							<li class="flex items-center gap-1 truncate">
 								<span class="shrink-0 rounded bg-muted px-1 text-[9px] text-muted-foreground">
 									{entry.period}
@@ -150,7 +153,7 @@
 								</span>
 							</li>
 						{/each}
-						{#if !holidayName && schedule.periods.every((p) => !p.slot) && !schedule.isWeekend}
+						{#if !holidayName && schedule.periods.filter((p) => allowedPeriods.has(p.period)).every((p) => !p.slot) && !schedule.isWeekend}
 							<li class="text-muted-foreground/70">授業なし</li>
 						{/if}
 					</ul>

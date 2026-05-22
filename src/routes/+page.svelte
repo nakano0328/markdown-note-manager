@@ -1,19 +1,29 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import DashboardStats from '$lib/components/DashboardStats.svelte';
+	import NowBanner from '$lib/components/NowBanner.svelte';
 	import TaskDashboard from '$lib/components/TaskDashboard.svelte';
 	import TimetableGrid from '$lib/components/TimetableGrid.svelte';
 	import WeekCalendar from '$lib/components/WeekCalendar.svelte';
-	import { formatLocalDate, resolveDaySchedule, weekdayFromDate } from '$lib/calendar';
+	import { formatLocalDate, resolveCurrentPeriod, resolveDaySchedule, weekdayFromDate } from '$lib/calendar';
+	import { buildPeriodWindow } from '$lib/period-times';
+	import {
+		notificationPermission,
+		notifyDailyTaskSummary,
+		notifyUpcomingClass,
+		requestPermission,
+		shouldOfferPermissionPrompt
+	} from '$lib/notifications';
 	import type {
 		CalendarEvent,
+		PeriodTime,
 		PublicHoliday,
 		TaskItem,
 		Timetable,
 		TimetableSettings,
 		TimetableTerm
 	} from '$lib/types';
-	import { AlertCircle, Loader2 } from 'lucide-svelte';
+	import { AlertCircle, Bell, Loader2 } from 'lucide-svelte';
 
 	const today = formatLocalDate(new Date());
 	const todayDay = weekdayFromDate(today);
@@ -35,6 +45,41 @@
 	const todaySchedule = $derived(
 		resolveDaySchedule(today, timetable, todayEvents, todayHolidays)
 	);
+	const periodWindowFn = $derived(buildPeriodWindow(timetableSettings));
+
+	let notifPermission = $state<NotificationPermission | 'unsupported'>('default');
+	let showPermissionPrompt = $state(false);
+	let upcomingCheckId: ReturnType<typeof setInterval> | null = null;
+	let dailySummarySent = $state(false);
+
+	async function handleEnableNotifications() {
+		const result = await requestPermission();
+		notifPermission = result;
+		showPermissionPrompt = false;
+	}
+
+	function dismissPermissionPrompt() {
+		showPermissionPrompt = false;
+		try {
+			localStorage.setItem('mnm:notifications:asked', '1');
+		} catch {
+			// 容量超過などは無視
+		}
+	}
+
+	function maybeNotifyDailySummary() {
+		if (dailySummarySent) return;
+		if (notifPermission !== 'granted') return;
+		if (tasksLoading || tasks.length === 0) return;
+		notifyDailyTaskSummary(today, tasks);
+		dailySummarySent = true;
+	}
+
+	function tickUpcoming() {
+		if (notifPermission !== 'granted') return;
+		const snap = resolveCurrentPeriod(new Date(), todaySchedule, periodWindowFn);
+		notifyUpcomingClass(snap, today);
+	}
 
 	async function loadTimetable(termId?: string) {
 		timetableLoading = true;
@@ -134,6 +179,30 @@
 		viewedTerm = data.viewedTerm;
 	}
 
+	async function handlePeriodTimesChange(periodTimes: PeriodTime[]) {
+		const res = await fetch('/api/timetable', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ periodTimes })
+		});
+
+		if (!res.ok) {
+			const body = await res.json().catch(() => ({ message: res.statusText }));
+			throw new Error(body.message ?? `Failed to update period times (${res.status})`);
+		}
+
+		const data = (await res.json()) as {
+			timetable: Timetable;
+			settings: TimetableSettings;
+			activeTerm: TimetableTerm;
+			viewedTerm: TimetableTerm;
+		};
+		timetable = data.timetable ?? {};
+		timetableSettings = data.settings;
+		activeTerm = data.activeTerm;
+		viewedTerm = data.viewedTerm;
+	}
+
 	async function handleTaskToggle(task: TaskItem, isCompleted: boolean) {
 		const res = await fetch('/api/tasks', {
 			method: 'PATCH',
@@ -162,7 +231,25 @@
 	onMount(() => {
 		loadTimetable();
 		loadTodayCalendar();
-		loadTasks();
+		loadTasks().then(() => maybeNotifyDailySummary());
+
+		notifPermission = notificationPermission();
+		if (shouldOfferPermissionPrompt()) {
+			showPermissionPrompt = true;
+		}
+
+		upcomingCheckId = setInterval(tickUpcoming, 60_000);
+		tickUpcoming();
+	});
+
+	$effect(() => {
+		void todaySchedule;
+		void tasks;
+		maybeNotifyDailySummary();
+	});
+
+	onDestroy(() => {
+		if (upcomingCheckId) clearInterval(upcomingCheckId);
 	});
 </script>
 
@@ -190,21 +277,47 @@
 		</div>
 	{/if}
 
+	{#if showPermissionPrompt}
+		<div class="flex flex-wrap items-center gap-2 rounded border border-sky-300 bg-sky-50 p-2 text-xs text-sky-900">
+			<Bell class="size-4 shrink-0" />
+			<span class="flex-1">
+				課題リマインドと授業開始のブラウザ通知を有効にしますか？
+			</span>
+			<button
+				type="button"
+				onclick={handleEnableNotifications}
+				class="rounded bg-sky-600 px-2 py-1 text-xs font-medium text-white hover:bg-sky-700"
+			>
+				有効にする
+			</button>
+			<button
+				type="button"
+				onclick={dismissPermissionPrompt}
+				class="rounded border bg-white px-2 py-1 text-xs hover:bg-accent"
+			>
+				あとで
+			</button>
+		</div>
+	{/if}
+
 	{#if timetableLoading}
 		<div class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
 			<Loader2 class="size-4 animate-spin" /> 読み込み中…
 		</div>
 	{:else}
+		<NowBanner {todaySchedule} settings={timetableSettings} />
+
 		<DashboardStats
 			{tasks}
 			{timetable}
 			{todayDay}
 			{todaySchedule}
+			settings={timetableSettings}
 			calendarLoading={todayCalendarLoading}
 			calendarError={todayCalendarError}
 		/>
 
-		<WeekCalendar {timetable} />
+		<WeekCalendar {timetable} settings={timetableSettings} />
 
 		<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 			<TimetableGrid
@@ -216,6 +329,7 @@
 				onChange={handleTimetableChange}
 				onTermChange={handleTermChange}
 				onViewedTermChange={handleViewedTermChange}
+				onPeriodTimesChange={handlePeriodTimesChange}
 			/>
 			<TaskDashboard
 				{tasks}

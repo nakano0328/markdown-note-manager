@@ -16,12 +16,30 @@ export function isValidTerm(value: unknown): value is TimetableTerm {
 	);
 }
 
+const HHMM = /^\d{2}:\d{2}$/;
+
+export function isValidPeriodTime(value: unknown): boolean {
+	if (!isObject(value)) return false;
+	return (
+		typeof value.start === 'string' &&
+		typeof value.end === 'string' &&
+		HHMM.test(value.start) &&
+		HHMM.test(value.end) &&
+		value.start < value.end
+	);
+}
+
 export function isValidSettings(value: unknown): value is TimetableSettings {
 	if (!isObject(value)) return false;
 	if (value.version !== 1 || typeof value.activeTermId !== 'string' || !Array.isArray(value.terms)) {
 		return false;
 	}
-	return value.terms.every(isValidTerm);
+	if (!value.terms.every(isValidTerm)) return false;
+	if (value.periodTimes !== undefined) {
+		if (!Array.isArray(value.periodTimes)) return false;
+		if (!value.periodTimes.every(isValidPeriodTime)) return false;
+	}
+	return true;
 }
 
 export function orderedTerms(terms: TimetableTerm[]): TimetableTerm[] {

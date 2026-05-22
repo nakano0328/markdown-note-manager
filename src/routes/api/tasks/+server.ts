@@ -3,11 +3,49 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getNotesDir, resolveSafePath } from '$lib/server/notes-dir';
-import type { TaskItem } from '$lib/types';
+import type { TaskItem, TaskPriority } from '$lib/types';
 import type { RequestHandler } from './$types';
 
 const IGNORED_DIRS = new Set(['.git', '.obsidian', 'node_modules', 'images']);
 const TASK_LINE = /^(\s*[-*+]\s+\[)([ xX])(\]\s+)(.+?)(\s*)$/;
+const DUE_DATE_TOKEN = /\s*(?:📅|due:)\s*(\d{4}-\d{2}-\d{2})/u;
+const PRIORITY_TOKEN = /\s*([⏫🔼🔽])/u;
+
+const PRIORITY_MAP: Record<string, TaskPriority> = {
+	'⏫': 'high',
+	'🔼': 'medium',
+	'🔽': 'low'
+};
+
+interface ParsedMeta {
+	displayContent: string;
+	dueDate: string | null;
+	priority: TaskPriority | null;
+}
+
+function parseTaskMeta(raw: string): ParsedMeta {
+	let content = raw;
+	let dueDate: string | null = null;
+	let priority: TaskPriority | null = null;
+
+	const dueMatch = content.match(DUE_DATE_TOKEN);
+	if (dueMatch) {
+		dueDate = dueMatch[1];
+		content = content.replace(DUE_DATE_TOKEN, '');
+	}
+
+	const prioMatch = content.match(PRIORITY_TOKEN);
+	if (prioMatch) {
+		priority = PRIORITY_MAP[prioMatch[1]] ?? null;
+		content = content.replace(PRIORITY_TOKEN, '');
+	}
+
+	return {
+		displayContent: content.replace(/\s+/g, ' ').trim(),
+		dueDate,
+		priority
+	};
+}
 
 async function walkMarkdown(absDir: string, root: string, out: string[]): Promise<void> {
 	const entries = await fs.readdir(absDir, { withFileTypes: true });
@@ -43,14 +81,17 @@ function toTaskItem(relPath: string, lineNumber: number, line: string): TaskItem
 	if (!match) return null;
 
 	const checked = match[2].toLowerCase() === 'x';
-	const content = match[4];
+	const rawContent = match[4];
+	const meta = parseTaskMeta(rawContent);
 	return {
-		id: makeId(relPath, lineNumber, content),
+		id: makeId(relPath, lineNumber, rawContent),
 		filePath: relPath.split(path.sep).join('/'),
 		lineNumber,
 		subject: deriveSubject(relPath),
-		content,
-		isCompleted: checked
+		content: meta.displayContent || rawContent,
+		isCompleted: checked,
+		dueDate: meta.dueDate,
+		priority: meta.priority
 	};
 }
 

@@ -5,6 +5,7 @@
 		CalendarDays,
 		ChevronLeft,
 		ChevronRight,
+		Clock,
 		Loader2,
 		Pencil,
 		Plus,
@@ -13,6 +14,7 @@
 		Trash2,
 		X
 	} from 'lucide-svelte';
+	import PeriodTimesModal from '$lib/components/PeriodTimesModal.svelte';
 	import TermSettingsModal from '$lib/components/TermSettingsModal.svelte';
 	import TimetableSlotEditor from '$lib/components/TimetableSlotEditor.svelte';
 	import {
@@ -21,17 +23,18 @@
 		persistTimetableSlot
 	} from '$lib/timetable-client';
 	import {
-		PERIODS,
 		buildMonthGrid,
 		formatLocalDate,
 		isSameMonth,
 		parseDate,
 		resolveDaySchedule
 	} from '$lib/calendar';
+	import { enabledPeriods, effectivePeriodTimes } from '$lib/period-times';
 	import { WEEKDAYS } from '$lib/types';
 	import type {
 		CalendarEvent,
 		PeriodOverrideEvent,
+		PeriodTime,
 		PublicHoliday,
 		Timetable,
 		TimetableSettings,
@@ -58,7 +61,7 @@
 	};
 
 	const today = formatLocalDate(new Date());
-	const HEAD_DAYS = ['月', '火', '水', '木', '金', '土', '日'] as const;
+	const HEAD_DAYS = ['日', '月', '火', '水', '木', '金', '土'] as const;
 
 	let monthAnchor = $state(today.slice(0, 7) + '-01');
 	let timetable = $state<Timetable>({});
@@ -78,6 +81,7 @@
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
 	let termEditorOpen = $state(false);
+	let periodTimesEditorOpen = $state(false);
 	let slotEditing = $state<{ day: Weekday; period: string } | null>(null);
 	let slotSaving = $state(false);
 	let slotError = $state<string | null>(null);
@@ -91,6 +95,9 @@
 	});
 	const selectedSchedule = $derived(resolveDaySchedule(selectedDate, timetable, events, holidays));
 	const selectedDayEvents = $derived(events.filter((e) => e.date === selectedDate));
+	const allowedPeriods = $derived(enabledPeriods(timetableSettings));
+	const allowedPeriodSet = $derived(new Set(allowedPeriods));
+	const periodTimesList = $derived(effectivePeriodTimes(timetableSettings));
 
 	async function loadDirectories() {
 		try {
@@ -186,6 +193,28 @@
 		if (!res.ok) {
 			const body = await res.json().catch(() => ({ message: res.statusText }));
 			throw new Error(body.message ?? `Failed to update term (${res.status})`);
+		}
+		const data = (await res.json()) as {
+			timetable: Timetable;
+			settings: TimetableSettings;
+			activeTerm: TimetableTerm;
+			viewedTerm: TimetableTerm;
+		};
+		timetableSettings = data.settings;
+		activeTerm = data.activeTerm;
+		viewedTerm = data.viewedTerm;
+		timetable = data.timetable ?? {};
+	}
+
+	async function handlePeriodTimesChange(periodTimes: PeriodTime[]) {
+		const res = await fetch('/api/timetable', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ periodTimes })
+		});
+		if (!res.ok) {
+			const body = await res.json().catch(() => ({ message: res.statusText }));
+			throw new Error(body.message ?? `Failed to update period times (${res.status})`);
 		}
 		const data = (await res.json()) as {
 			timetable: Timetable;
@@ -471,9 +500,20 @@
 			</button>
 			<button
 				type="button"
-				onclick={() => (termEditorOpen = true)}
+				onclick={() => (periodTimesEditorOpen = true)}
 				disabled={!timetableSettings}
 				class="ml-1 inline-flex items-center gap-1 rounded border px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+				aria-label="授業時間"
+				title="授業時間"
+			>
+				<Clock class="size-3.5" />
+				<span class="hidden sm:inline">授業時間</span>
+			</button>
+			<button
+				type="button"
+				onclick={() => (termEditorOpen = true)}
+				disabled={!timetableSettings}
+				class="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
 				aria-label="学期設定"
 				title="学期設定"
 			>
@@ -565,8 +605,9 @@
 									{holidayLabel}
 								</span>
 							{:else}
+								{@const slotted = schedule.periods.filter((p) => allowedPeriodSet.has(p.period) && p.slot)}
 								<ul class="mt-0.5 min-h-0 flex-1 space-y-0.5 overflow-hidden text-[10px]">
-									{#each schedule.periods.filter((p) => p.slot).slice(0, 3) as entry (entry.period)}
+									{#each slotted.slice(0, 3) as entry (entry.period)}
 										<li class="flex items-center gap-1 truncate">
 											<span class="shrink-0 text-[9px] text-muted-foreground">{entry.period}</span>
 											<span class={cn('truncate', entry.source === 'override' && 'font-medium text-amber-700')}>
@@ -574,8 +615,8 @@
 											</span>
 										</li>
 									{/each}
-									{#if schedule.periods.filter((p) => p.slot).length > 3}
-										<li class="text-[9px] text-muted-foreground">+{schedule.periods.filter((p) => p.slot).length - 3}</li>
+									{#if slotted.length > 3}
+										<li class="text-[9px] text-muted-foreground">+{slotted.length - 3}</li>
 									{/if}
 								</ul>
 							{/if}
@@ -614,9 +655,13 @@
 					</p>
 				{/each}
 				<ul class="space-y-0.5 text-xs">
-					{#each selectedSchedule.periods as entry (entry.period)}
-						<li class="flex items-center gap-2">
-							<span class="w-8 shrink-0 text-[10px] text-muted-foreground">{entry.period}限</span>
+					{#each selectedSchedule.periods.filter((p) => allowedPeriodSet.has(p.period)) as entry (entry.period)}
+						{@const pt = periodTimesList[Number(entry.period) - 1]}
+						<li class="grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-2">
+							<span class="flex shrink-0 items-baseline gap-1 whitespace-nowrap text-muted-foreground">
+								<span class="text-[10px]">{entry.period}限</span>
+								{#if pt}<span class="text-[9px] tabular-nums">{pt.start}〜{pt.end}</span>{/if}
+							</span>
 							{#if entry.slot}
 								<span
 									class={cn(
@@ -651,7 +696,7 @@
 						</div>
 					{/if}
 					<ul class="grid grid-cols-1 gap-0.5">
-						{#each ['1', '2', '3', '4', '5', '6', '7', '8'] as p (p)}
+						{#each allowedPeriods as p (p)}
 							{@const baseSlot = baseSlots[p]}
 							<li>
 								<button
@@ -781,6 +826,13 @@
 	{viewedTerm}
 	onClose={() => (termEditorOpen = false)}
 	onSubmit={handleTermChange}
+/>
+
+<PeriodTimesModal
+	open={periodTimesEditorOpen}
+	settings={timetableSettings}
+	onClose={() => (periodTimesEditorOpen = false)}
+	onSubmit={handlePeriodTimesChange}
 />
 
 <TimetableSlotEditor
@@ -934,7 +986,7 @@
 								bind:value={draft.period}
 								class="w-full rounded border bg-white px-2 py-1.5 text-sm focus:border-primary focus:outline-none"
 							>
-								{#each PERIODS as p (p)}
+								{#each allowedPeriods as p (p)}
 									<option value={p}>{p}限</option>
 								{/each}
 							</select>

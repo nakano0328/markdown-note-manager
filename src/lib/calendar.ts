@@ -6,6 +6,7 @@ import type {
 	PeriodOverrideEvent,
 	PublicHoliday,
 	SchoolHolidayEvent,
+	TimetableSlot,
 	Timetable,
 	Weekday
 } from './types';
@@ -44,6 +45,13 @@ export function startOfWeekMonday(date: string): string {
 	return formatLocalDate(d);
 }
 
+export function startOfWeekSunday(date: string): string {
+	const d = parseDate(date);
+	const day = d.getDay();
+	d.setDate(d.getDate() - day);
+	return formatLocalDate(d);
+}
+
 export function startOfMonth(date: string): string {
 	const d = parseDate(date);
 	d.setDate(1);
@@ -58,7 +66,7 @@ export function endOfMonth(date: string): string {
 
 export function buildMonthGrid(monthAnchor: string): string[] {
 	const first = startOfMonth(monthAnchor);
-	const start = startOfWeekMonday(first);
+	const start = startOfWeekSunday(first);
 	const last = endOfMonth(monthAnchor);
 	const days: string[] = [];
 	let cursor = start;
@@ -70,7 +78,7 @@ export function buildMonthGrid(monthAnchor: string): string[] {
 }
 
 export function buildWeekDates(date: string): string[] {
-	const start = startOfWeekMonday(date);
+	const start = startOfWeekSunday(date);
 	return Array.from({ length: 7 }, (_, i) => addDays(start, i));
 }
 
@@ -148,4 +156,74 @@ export function generateEventId(): string {
 	const random = Math.random().toString(36).slice(2, 10);
 	const stamp = Date.now().toString(36);
 	return `evt-${stamp}-${random}`;
+}
+
+export type NowStatus = 'in_class' | 'break' | 'before_first' | 'after_last' | 'no_class';
+
+export interface PeriodEntry {
+	period: string;
+	slot: TimetableSlot;
+	startMin: number;
+	endMin: number;
+}
+
+export interface NowSnapshot {
+	status: NowStatus;
+	current: (PeriodEntry & { minutesLeft: number }) | null;
+	next: (PeriodEntry & { minutesUntil: number }) | null;
+}
+
+export function resolveCurrentPeriod(
+	now: Date,
+	schedule: DaySchedule,
+	periodWindow: (period: string) => { startMin: number; endMin: number } | null
+): NowSnapshot {
+	const nowMin = now.getHours() * 60 + now.getMinutes();
+
+	const entries: PeriodEntry[] = [];
+	for (const p of schedule.periods) {
+		if (!p.slot) continue;
+		const win = periodWindow(p.period);
+		if (!win) continue;
+		entries.push({ period: p.period, slot: p.slot, startMin: win.startMin, endMin: win.endMin });
+	}
+	entries.sort((a, b) => a.startMin - b.startMin);
+
+	if (entries.length === 0) {
+		return { status: 'no_class', current: null, next: null };
+	}
+
+	const inClass = entries.find((e) => nowMin >= e.startMin && nowMin < e.endMin) ?? null;
+	const upcoming = entries.find((e) => e.startMin > nowMin) ?? null;
+	const last = entries[entries.length - 1];
+
+	if (inClass) {
+		return {
+			status: 'in_class',
+			current: { ...inClass, minutesLeft: inClass.endMin - nowMin },
+			next: upcoming ? { ...upcoming, minutesUntil: upcoming.startMin - nowMin } : null
+		};
+	}
+
+	if (upcoming && nowMin < entries[0].startMin) {
+		return {
+			status: 'before_first',
+			current: null,
+			next: { ...upcoming, minutesUntil: upcoming.startMin - nowMin }
+		};
+	}
+
+	if (upcoming) {
+		return {
+			status: 'break',
+			current: null,
+			next: { ...upcoming, minutesUntil: upcoming.startMin - nowMin }
+		};
+	}
+
+	if (nowMin >= last.endMin) {
+		return { status: 'after_last', current: null, next: null };
+	}
+
+	return { status: 'no_class', current: null, next: null };
 }

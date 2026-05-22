@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { DaySchedule, TaskItem, Timetable } from '$lib/types';
+	import type { DaySchedule, TaskItem, Timetable, TimetableSettings } from '$lib/types';
+	import { enabledPeriods } from '$lib/period-times';
 	import { CalendarDays, ListTodo, BookOpen } from 'lucide-svelte';
 
 	interface Props {
@@ -7,6 +8,7 @@
 		timetable: Timetable;
 		todayDay: string | null;
 		todaySchedule: DaySchedule;
+		settings: TimetableSettings | null;
 		calendarLoading?: boolean;
 		calendarError?: string | null;
 	}
@@ -16,14 +18,17 @@
 		timetable,
 		todayDay,
 		todaySchedule,
+		settings,
 		calendarLoading = false,
 		calendarError = null
 	}: Props = $props();
 
 	const pendingTasks = $derived(tasks.filter((t) => !t.isCompleted).length);
 	const totalTasks = $derived(tasks.length);
+	const allowedPeriods = $derived(new Set(enabledPeriods(settings)));
 	const todayClasses = $derived.by(() => {
 		return todaySchedule.periods
+			.filter((period) => allowedPeriods.has(period.period))
 			.filter((period) => period.slot)
 			.map((period) => ({
 				period: period.period,
