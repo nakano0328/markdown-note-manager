@@ -144,14 +144,27 @@ export function resolveActiveTermId(settings: TimetableSettings, today: string):
 		return true;
 	}
 
+	let sorted = orderedTerms(settings.terms);
 	let changed = false;
 	for (let i = 0; i < 20; i++) {
-		const activeTerm = settings.terms.find((term) => term.id === settings.activeTermId);
+		const activeTerm = sorted.find((term) => term.id === settings.activeTermId);
 		if (activeTerm && activeTerm.endsAt >= today) return changed;
+
+		const nextExistingTerm = activeTerm
+			? sorted.find((term) => term.startsAt > activeTerm.startsAt)
+			: (sorted.find((term) => term.startsAt > today) ?? sorted.at(-1));
+		if (nextExistingTerm) {
+			settings.activeTermId = nextExistingTerm.id;
+			changed = true;
+			continue;
+		}
 
 		const nextTerm = activeTerm ? nextTermAfter(activeTerm) : defaultTermForDate(today);
 		const existingTerm = settings.terms.find((term) => term.id === nextTerm.id);
-		if (!existingTerm) settings.terms = orderedTerms([...settings.terms, nextTerm]);
+		if (!existingTerm) {
+			settings.terms = orderedTerms([...settings.terms, nextTerm]);
+			sorted = settings.terms;
+		}
 		settings.activeTermId = existingTerm?.id ?? nextTerm.id;
 		changed = true;
 	}
