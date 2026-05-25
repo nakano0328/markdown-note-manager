@@ -10,6 +10,12 @@ export interface SlotPersistArgs {
 	viewedTimetable: Timetable;
 }
 
+export interface SlotUpdate {
+	day: string;
+	period: string;
+	slot: TimetableSlot | null;
+}
+
 export interface SlotPersistResult {
 	timetable: Timetable;
 	settings: TimetableSettings;
@@ -28,15 +34,19 @@ export function cloneTimetable(value: Timetable): Timetable {
 	return next;
 }
 
-function applySlotUpdate(base: Timetable, day: string, period: string, slot: TimetableSlot | null): Timetable {
+function applySlotUpdate(base: Timetable, update: SlotUpdate): Timetable {
 	const next = cloneTimetable(base);
-	if (!next[day]) next[day] = {};
-	if (slot) next[day][period] = { ...slot };
+	if (!next[update.day]) next[update.day] = {};
+	if (update.slot) next[update.day][update.period] = { ...update.slot };
 	else {
-		delete next[day][period];
-		if (Object.keys(next[day]).length === 0) delete next[day];
+		delete next[update.day][update.period];
+		if (Object.keys(next[update.day]).length === 0) delete next[update.day];
 	}
 	return next;
+}
+
+function applySlotUpdates(base: Timetable, updates: SlotUpdate[]): Timetable {
+	return updates.reduce((next, update) => applySlotUpdate(next, update), base);
 }
 
 async function fetchTimetableForTerm(termId: string): Promise<Timetable> {
@@ -50,14 +60,30 @@ async function fetchTimetableForTerm(termId: string): Promise<Timetable> {
 }
 
 export async function persistTimetableSlot(args: SlotPersistArgs): Promise<SlotPersistResult> {
-	const slotUpdate = { day: args.day, period: args.period, slot: args.slot };
+	return persistTimetableSlots({
+		updates: [{ day: args.day, period: args.period, slot: args.slot }],
+		startTermId: args.startTermId,
+		endTermId: args.endTermId,
+		viewedTerm: args.viewedTerm,
+		viewedTimetable: args.viewedTimetable
+	});
+}
+
+export async function persistTimetableSlots(args: {
+	updates: SlotUpdate[];
+	startTermId: string;
+	endTermId: string;
+	viewedTerm: TimetableTerm | null;
+	viewedTimetable: Timetable;
+}): Promise<SlotPersistResult> {
+	if (args.updates.length === 0) throw new Error('保存するコマがありません');
 	const viewedTermId = args.viewedTerm?.id;
 	let timetablePayload: Timetable;
 	if (args.startTermId === viewedTermId) {
-		timetablePayload = applySlotUpdate(args.viewedTimetable, args.day, args.period, args.slot);
+		timetablePayload = applySlotUpdates(args.viewedTimetable, args.updates);
 	} else {
 		const base = await fetchTimetableForTerm(args.startTermId);
-		timetablePayload = applySlotUpdate(base, args.day, args.period, args.slot);
+		timetablePayload = applySlotUpdates(base, args.updates);
 	}
 	const res = await fetch('/api/timetable', {
 		method: 'POST',
@@ -66,7 +92,7 @@ export async function persistTimetableSlot(args: SlotPersistArgs): Promise<SlotP
 			timetable: timetablePayload,
 			termId: args.startTermId,
 			applyUntilTermId: args.endTermId,
-			slotUpdate
+			slotUpdates: args.updates
 		})
 	});
 	if (!res.ok) {

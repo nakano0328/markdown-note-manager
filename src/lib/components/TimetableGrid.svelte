@@ -11,7 +11,7 @@
 		type TreeNode
 	} from '$lib/types';
 	import { cn } from '$lib/utils';
-	import { collectSubjectDirectories, persistTimetableSlot } from '$lib/timetable-client';
+	import { collectSubjectDirectories, persistTimetableSlots } from '$lib/timetable-client';
 	import { newNote } from '$lib/stores/new-note.svelte';
 	import { effectivePeriodTimes, enabledPeriods } from '$lib/period-times';
 	import TermSettingsModal from './TermSettingsModal.svelte';
@@ -79,14 +79,21 @@
 		}
 	}
 
-	async function commitSlot(slot: TimetableSlot | null, startTermId: string, endTermId: string) {
+	async function commitSlot(
+		slot: TimetableSlot | null,
+		startTermId: string,
+		endTermId: string,
+		periodCount = 1
+	) {
 		if (!editingDay || !editingPeriod) return;
+		const day = editingDay;
+		const startIndex = periods.indexOf(editingPeriod);
+		const targetPeriods =
+			startIndex >= 0 ? periods.slice(startIndex, startIndex + periodCount) : [editingPeriod];
 		saving = true;
 		try {
-			const data = await persistTimetableSlot({
-				day: editingDay,
-				period: editingPeriod,
-				slot,
+			const data = await persistTimetableSlots({
+				updates: targetPeriods.map((period) => ({ day, period, slot })),
 				startTermId,
 				endTermId,
 				viewedTerm,
@@ -125,6 +132,11 @@
 
 	const editorCurrentSlot = $derived<TimetableSlot | null>(
 		editingDay && editingPeriod ? (timetable[editingDay]?.[editingPeriod] ?? null) : null
+	);
+	const editorRemainingPeriods = $derived(
+		editingPeriod && periods.includes(editingPeriod)
+			? periods.slice(periods.indexOf(editingPeriod))
+			: [editingPeriod ?? '1']
 	);
 
 	onMount(loadDirectories);
@@ -296,12 +308,14 @@
 	day={editingDay ?? '月'}
 	period={editingPeriod ?? '1'}
 	currentSlot={editorCurrentSlot}
+	remainingPeriods={editorRemainingPeriods}
 	{settings}
 	{viewedTerm}
 	defaultStartTermId={viewedTerm?.id ?? ''}
 	defaultEndTermId={viewedTerm?.id ?? ''}
 	{directories}
-	onSave={({ slot, startTermId, endTermId }) => commitSlot(slot, startTermId, endTermId)}
+	onSave={({ slot, startTermId, endTermId, periodCount }) =>
+		commitSlot(slot, startTermId, endTermId, periodCount)}
 	onDelete={({ startTermId, endTermId }) => commitSlot(null, startTermId, endTermId)}
 	onClose={closeEditor}
 />

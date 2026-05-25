@@ -20,7 +20,7 @@
 	import {
 		collectSubjectDirectories,
 		directoryName,
-		persistTimetableSlot
+		persistTimetableSlots
 	} from '$lib/timetable-client';
 	import {
 		buildMonthGrid,
@@ -120,15 +120,24 @@
 		slotError = null;
 	}
 
-	async function commitSlot(slot: TimetableSlot | null, startTermId: string, endTermId: string) {
+	async function commitSlot(
+		slot: TimetableSlot | null,
+		startTermId: string,
+		endTermId: string,
+		periodCount = 1
+	) {
 		if (!slotEditing) return;
+		const day = slotEditing.day;
+		const startIndex = allowedPeriods.indexOf(slotEditing.period);
+		const targetPeriods =
+			startIndex >= 0
+				? allowedPeriods.slice(startIndex, startIndex + periodCount)
+				: [slotEditing.period];
 		slotSaving = true;
 		slotError = null;
 		try {
-			await persistTimetableSlot({
-				day: slotEditing.day,
-				period: slotEditing.period,
-				slot,
+			await persistTimetableSlots({
+				updates: targetPeriods.map((period) => ({ day, period, slot })),
 				startTermId,
 				endTermId,
 				viewedTerm,
@@ -148,6 +157,11 @@
 	const slotEditorPeriod = $derived(slotEditing?.period ?? '1');
 	const slotEditorCurrent = $derived<TimetableSlot | null>(
 		slotEditing ? (timetable[slotEditing.day]?.[slotEditing.period] ?? null) : null
+	);
+	const slotEditorRemainingPeriods = $derived(
+		slotEditing && allowedPeriods.includes(slotEditing.period)
+			? allowedPeriods.slice(allowedPeriods.indexOf(slotEditing.period))
+			: [slotEditorPeriod]
 	);
 	const slotEditorDefaultStart = $derived<string>(
 		pickTermForDate(selectedDate)?.id ?? viewedTerm?.id ?? ''
@@ -840,13 +854,15 @@
 	day={slotEditorDay}
 	period={slotEditorPeriod}
 	currentSlot={slotEditorCurrent}
+	remainingPeriods={slotEditorRemainingPeriods}
 	settings={timetableSettings}
 	{viewedTerm}
 	defaultStartTermId={slotEditorDefaultStart}
 	defaultEndTermId={slotEditorDefaultStart}
 	{directories}
 	contextLabel={selectedDate}
-	onSave={({ slot, startTermId, endTermId }) => commitSlot(slot, startTermId, endTermId)}
+	onSave={({ slot, startTermId, endTermId, periodCount }) =>
+		commitSlot(slot, startTermId, endTermId, periodCount)}
 	onDelete={({ startTermId, endTermId }) => commitSlot(null, startTermId, endTermId)}
 	onClose={closeSlotEditor}
 />

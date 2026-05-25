@@ -9,6 +9,7 @@
 		day: string;
 		period: string;
 		currentSlot: TimetableSlot | null;
+		remainingPeriods: string[];
 		settings: TimetableSettings | null;
 		viewedTerm: TimetableTerm | null;
 		defaultStartTermId: string;
@@ -19,6 +20,7 @@
 			slot: TimetableSlot;
 			startTermId: string;
 			endTermId: string;
+			periodCount: number;
 		}) => Promise<void> | void;
 		onDelete?: (args: { startTermId: string; endTermId: string }) => Promise<void> | void;
 		onClose: () => void;
@@ -29,6 +31,7 @@
 		day,
 		period,
 		currentSlot,
+		remainingPeriods,
 		settings,
 		viewedTerm,
 		defaultStartTermId,
@@ -44,6 +47,7 @@
 	let directory = $state('');
 	let startTermId = $state('');
 	let endTermId = $state('');
+	let periodCount = $state(1);
 	let directoryMenuOpen = $state(false);
 	let saving = $state(false);
 	let errorMessage = $state<string | null>(null);
@@ -72,6 +76,7 @@
 		directory = currentSlot?.directory ?? '';
 		startTermId = defaultStartTermId;
 		endTermId = defaultEndTermId || defaultStartTermId;
+		periodCount = 1;
 		directoryMenuOpen = false;
 		errorMessage = null;
 		initialized = true;
@@ -103,13 +108,15 @@
 			errorMessage = '対象学期を選択してください';
 			return;
 		}
+		const safePeriodCount = Math.min(Math.max(1, periodCount), remainingPeriods.length || 1);
 		saving = true;
 		errorMessage = null;
 		try {
 			await onSave({
 				slot: { subject: subjectTrim, directory: directoryTrim },
 				startTermId,
-				endTermId
+				endTermId,
+				periodCount: safePeriodCount
 			});
 		} catch (e) {
 			errorMessage = e instanceof Error ? e.message : '保存に失敗しました';
@@ -247,6 +254,23 @@
 						</p>
 					{/if}
 				{/if}
+
+				<label class="block">
+					<span class="mb-1 block text-xs font-medium text-muted-foreground">連続コマ</span>
+					<select
+						bind:value={periodCount}
+						class="w-full rounded border bg-white px-2 py-1.5 text-sm focus:border-primary focus:outline-none"
+						aria-label="連続コマ数"
+					>
+						{#each remainingPeriods as _, index (index)}
+							<option value={index + 1}>
+								{index + 1}コマ{index > 0
+									? ` (${period}限〜${remainingPeriods[index]}限に登録)`
+									: ''}
+							</option>
+						{/each}
+					</select>
+				</label>
 
 				{#if errorMessage}
 					<div class="flex items-start gap-2 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-800">

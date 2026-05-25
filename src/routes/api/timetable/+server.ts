@@ -225,6 +225,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		termId?: unknown;
 		applyUntilTermId?: unknown;
 		slotUpdate?: unknown;
+		slotUpdates?: unknown;
 	};
 
 	if (!isValidTimetable(body.timetable)) {
@@ -240,13 +241,28 @@ export const POST: RequestHandler = async ({ request }) => {
 		ensureTerm(settings, applyUntilTermId);
 
 		const store = await readStore(settings.activeTermId);
-		if (isValidSlotUpdate(body.slotUpdate)) {
+		let slotUpdates: SlotUpdate[] = [];
+		if (Array.isArray(body.slotUpdates)) {
+			if (!body.slotUpdates.every(isValidSlotUpdate)) {
+				throw error(400, 'slotUpdates payload is invalid');
+			}
+			slotUpdates = body.slotUpdates;
+		} else if (isValidSlotUpdate(body.slotUpdate)) {
+			slotUpdates = [body.slotUpdate];
+		}
+		if (slotUpdates.length > 0) {
 			const range = termRange(settings, termId, applyUntilTermId);
 			for (const term of range) {
-				store.terms[term.id] =
-					term.id === termId
-						? body.timetable
-						: applySlotUpdate(store.terms[term.id] ?? {}, body.slotUpdate);
+				if (term.id === termId) {
+					store.terms[term.id] = body.timetable;
+					continue;
+				}
+
+				let next = store.terms[term.id] ?? {};
+				for (const slotUpdate of slotUpdates) {
+					next = applySlotUpdate(next, slotUpdate);
+				}
+				store.terms[term.id] = next;
 			}
 		} else {
 			store.terms[termId] = body.timetable;
