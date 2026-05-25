@@ -43,7 +43,7 @@
 	let todayCalendarError = $state<string | null>(null);
 
 	const todaySchedule = $derived(
-		resolveDaySchedule(today, timetable, todayEvents, todayHolidays)
+		resolveDaySchedule(today, timetable, todayEvents, todayHolidays, timetableSettings)
 	);
 	const periodWindowFn = $derived(buildPeriodWindow(timetableSettings));
 

@@ -93,7 +93,9 @@
 		const [y, m] = monthAnchor.split('-');
 		return `${y}年 ${Number(m)}月`;
 	});
-	const selectedSchedule = $derived(resolveDaySchedule(selectedDate, timetable, events, holidays));
+	const selectedSchedule = $derived(
+		resolveDaySchedule(selectedDate, timetable, events, holidays, timetableSettings)
+	);
 	const selectedDayEvents = $derived(events.filter((e) => e.date === selectedDate));
 	const allowedPeriods = $derived(enabledPeriods(timetableSettings));
 	const allowedPeriodSet = $derived(new Set(allowedPeriods));
@@ -566,7 +568,7 @@
 				</div>
 				<div class="grid grid-cols-7 gap-1">
 					{#each monthGrid as date (date)}
-						{@const schedule = resolveDaySchedule(date, timetable, events, holidays)}
+						{@const schedule = resolveDaySchedule(date, timetable, events, holidays, timetableSettings)}
 						{@const wd = weekdayLabelOf(date)}
 						{@const inMonth = isSameMonth(date, monthAnchor)}
 						{@const holidayLabel = schedule.publicHoliday?.name ?? schedule.schoolHoliday?.title ?? null}

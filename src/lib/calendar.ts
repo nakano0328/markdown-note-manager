@@ -8,6 +8,7 @@ import type {
 	SchoolHolidayEvent,
 	TimetableSlot,
 	Timetable,
+	TimetableSettings,
 	Weekday
 } from './types';
 import { WEEKDAYS } from './types';
@@ -90,7 +91,8 @@ export function resolveDaySchedule(
 	date: string,
 	timetable: Timetable,
 	events: CalendarEvent[],
-	holidays: PublicHoliday[]
+	holidays: PublicHoliday[],
+	settings?: TimetableSettings | null
 ): DaySchedule {
 	const weekday = weekdayFromDate(date);
 	const dayIndex = parseDate(date).getDay();
@@ -110,11 +112,13 @@ export function resolveDaySchedule(
 		(event): event is PeriodOverrideEvent => event.type === 'period_override'
 	);
 	const publicHoliday = holidays.find((h) => h.date === date) ?? null;
+	const isInTerm =
+		!settings || settings.terms.some((term) => term.startsAt <= date && date <= term.endsAt);
 
 	const moveFollowsDay = inboundMove ? weekdayFromDate(inboundMove.fromDate) : null;
 	const followsDay = moveFollowsDay ?? swapEvent?.followsDay ?? weekday;
-	const baseSlots = followsDay ? (timetable[followsDay] ?? {}) : {};
-	const isHoliday = Boolean(publicHoliday || schoolHoliday);
+	const baseSlots = isInTerm && followsDay ? (timetable[followsDay] ?? {}) : {};
+	const isCanceledDay = Boolean(schoolHoliday || outboundMoves.length > 0);
 
 	const periods = PERIODS.map((period) => {
 		const override = overrides.find((event) => event.period === period);
@@ -125,7 +129,7 @@ export function resolveDaySchedule(
 				source: override.slot ? ('override' as const) : ('canceled' as const)
 			};
 		}
-		if (isHoliday) {
+		if (isCanceledDay) {
 			return { period, slot: null, source: 'canceled' as const };
 		}
 		const slot = baseSlots[period] ?? null;

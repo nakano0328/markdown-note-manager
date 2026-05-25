@@ -65,7 +65,10 @@
 	}
 
 	const schedules = $derived(
-		weekDates.map((date) => ({ date, schedule: resolveDaySchedule(date, timetable, events, holidays) }))
+		weekDates.map((date) => ({
+			date,
+			schedule: resolveDaySchedule(date, timetable, events, holidays, settings)
+		}))
 	);
 
 	onMount(load);

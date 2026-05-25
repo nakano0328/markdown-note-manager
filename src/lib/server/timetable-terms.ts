@@ -127,7 +127,7 @@ export function ensureTermForDate(
 	const sorted = orderedTerms(settings.terms);
 	const nearestPast = sorted.findLast((term) => term.startsAt <= date);
 	const nearestFuture = sorted.find((term) => term.startsAt > date);
-	const nearest = nearestPast ?? nearestFuture;
+	const nearest = nearestPast && nearestFuture ? nearestFuture : (nearestPast ?? nearestFuture);
 	if (nearest) return { termId: nearest.id, changed: false };
 
 	const fallback = defaultTermForDate(date);
