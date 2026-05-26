@@ -5,6 +5,7 @@
 		Decoration,
 		EditorView,
 		keymap,
+		lineNumbers,
 		ViewPlugin,
 		type DecorationSet,
 		type ViewUpdate
@@ -41,7 +42,6 @@
 	const lineCount = $derived(value.length === 0 ? 1 : value.split('\n').length);
 	const characterCount = $derived(value.length);
 	const INDENT = '  ';
-	let caretIndentLevel = $state(0);
 	let editorRoot = $state<HTMLDivElement | null>(null);
 	let editorView = $state<EditorView | null>(null);
 	let syncingScroll = false;
@@ -98,6 +98,16 @@
 			minHeight: '100%',
 			padding: '0.75rem 1rem calc(100vh - 8rem)'
 		},
+		'.cm-gutters': {
+			backgroundColor: '#ffffff',
+			borderRight: '1px solid #e5e7eb',
+			color: '#94a3b8'
+		},
+		'.cm-lineNumbers .cm-gutterElement': {
+			minWidth: '2.5rem',
+			padding: '0 0.75rem 0 0.5rem',
+			textAlign: 'right'
+		},
 		'.cm-line': {
 			padding: '0',
 			position: 'relative'
@@ -132,7 +142,6 @@
 		editorView.dispatch({
 			changes: { from: 0, to: current.length, insert: value }
 		});
-		updateCaretIndentLevelFromView(editorView);
 	});
 
 	$effect(() => {
@@ -156,7 +165,6 @@
 			state: createEditorState(value)
 		});
 		editorView.scrollDOM.addEventListener('scroll', handleEditorScroll, { passive: true });
-		updateCaretIndentLevelFromView(editorView);
 
 		return () => {
 			editorView?.scrollDOM.removeEventListener('scroll', handleEditorScroll);
@@ -175,6 +183,7 @@
 				syntaxHighlighting(markdownHighlightStyle),
 				codeBlockBgPlugin,
 				listIndentGuidePlugin,
+				lineNumbers(),
 				EditorView.lineWrapping,
 				EditorView.domEventHandlers({
 					paste: handlePaste,
@@ -184,9 +193,6 @@
 				EditorView.updateListener.of((update) => {
 					if (update.docChanged) {
 						value = update.state.doc.toString();
-					}
-					if (update.docChanged || update.selectionSet) {
-						updateCaretIndentLevelFromView(update.view);
 					}
 				}),
 				Prec.high(
@@ -501,12 +507,6 @@
 		return null;
 	}
 
-	function updateCaretIndentLevelFromView(view: EditorView) {
-		const line = view.state.doc.lineAt(view.state.selection.main.head);
-		const indent = line.text.match(/^[ \t]*/)?.[0] ?? '';
-		caretIndentLevel = getIndentLevel(indent);
-	}
-
 	function getIndentLevel(indent: string) {
 		let level = 0;
 		for (const char of indent) {
@@ -532,7 +532,6 @@
 					{imageUploadStatus}
 				</span>
 			{/if}
-			<span class="rounded border bg-white px-1.5 py-0.5 text-black">Tab {caretIndentLevel}</span>
 			<span>{lineCount} 行 / {characterCount} 字</span>
 		</div>
 	</div>
