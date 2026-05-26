@@ -123,7 +123,12 @@
 		{/if}
 	</div>
 
-	<div bind:this={previewScroller} onscroll={handleScroll} class="min-h-0 flex-1 overflow-auto px-5 py-4">
+	<div
+		bind:this={previewScroller}
+		onscroll={handleScroll}
+		class="min-h-0 flex-1 overflow-auto px-5 pt-4"
+		style="padding-bottom: calc(100vh - 8rem)"
+	>
 		{#if renderError}
 			<div class="flex items-start gap-2 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
 				<AlertCircle class="mt-0.5 size-4 shrink-0" />
