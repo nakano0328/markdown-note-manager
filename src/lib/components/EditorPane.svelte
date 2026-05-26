@@ -127,7 +127,7 @@
 			backgroundImage:
 				'repeating-linear-gradient(to right, transparent 0 calc(2ch - 1px), #b7c0ca calc(2ch - 1px) 2ch)',
 			backgroundRepeat: 'no-repeat',
-			backgroundSize: 'calc(var(--list-indent-level) * 2ch) 100%'
+			backgroundSize: 'calc(var(--list-indent-level) * 2ch) 1.45em'
 		},
 		'.cm-cursorLayer': {
 			zIndex: '10'
