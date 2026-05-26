@@ -96,7 +96,7 @@
 		},
 		'.cm-content': {
 			minHeight: '100%',
-			padding: '0.75rem 1rem'
+			padding: '0.75rem 1rem 35vh'
 		},
 		'.cm-line': {
 			padding: '0',
