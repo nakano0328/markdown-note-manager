@@ -198,8 +198,7 @@
 				Prec.high(
 					keymap.of([
 						{ key: 'Tab', run: addIndent },
-						{ key: 'Shift-Tab', run: removeIndent },
-						{ key: 'Enter', run: continueListInCodeMirror }
+						{ key: 'Shift-Tab', run: removeIndent }
 					])
 				),
 				keymap.of([...defaultKeymap, ...historyKeymap])
@@ -417,38 +416,8 @@
 		return builder.finish();
 	}
 
-	function continueListInCodeMirror(view: EditorView) {
-		const selection = view.state.selection.main;
-		if (!selection.empty) return false;
-
-		const line = view.state.doc.lineAt(selection.head);
-		const beforeCursor = line.text.slice(0, selection.head - line.from);
-		const marker = getListContinuation(beforeCursor);
-		if (!marker) return false;
-
-		const trimmedContent = line.text.slice(marker.indent.length + marker.raw.length).trim();
-		if (!trimmedContent) {
-			const nextCursor = line.from + marker.indent.length;
-			view.dispatch({
-				changes: { from: line.from, to: selection.head, insert: marker.indent },
-				selection: { anchor: nextCursor }
-			});
-			return true;
-		}
-
-		const insertion = `\n${marker.indent}${marker.next}`;
-		const nextCursor = selection.head + insertion.length;
-		view.dispatch({
-			changes: { from: selection.head, insert: insertion },
-			selection: { anchor: nextCursor }
-		});
-		return true;
-	}
-
 	function addIndent(view: EditorView) {
-		const selection = view.state.selection.main;
-		const startLine = view.state.doc.lineAt(selection.from);
-		const endLine = view.state.doc.lineAt(selection.to);
+		const { startLine, endLine } = getSelectedLineRange(view);
 		const changes = [];
 
 		for (let lineNumber = startLine.number; lineNumber <= endLine.number; lineNumber += 1) {
@@ -461,9 +430,7 @@
 	}
 
 	function removeIndent(view: EditorView) {
-		const selection = view.state.selection.main;
-		const startLine = view.state.doc.lineAt(selection.from);
-		const endLine = view.state.doc.lineAt(selection.to);
+		const { startLine, endLine } = getSelectedLineRange(view);
 		const changes = [];
 
 		for (let lineNumber = startLine.number; lineNumber <= endLine.number; lineNumber += 1) {
@@ -479,32 +446,25 @@
 		return true;
 	}
 
+	function getSelectedLineRange(view: EditorView) {
+		const selection = view.state.selection.main;
+		const startLine = view.state.doc.lineAt(selection.from);
+		let endPosition = selection.to;
+
+		if (!selection.empty && endPosition > selection.from) {
+			const endLine = view.state.doc.lineAt(endPosition);
+			if (endPosition === endLine.from) endPosition -= 1;
+		}
+
+		const endLine = view.state.doc.lineAt(endPosition);
+		return { startLine, endLine };
+	}
+
 	function getRemovableIndent(text: string) {
 		if (text.startsWith(INDENT)) return INDENT.length;
 		if (text.startsWith('\t')) return 1;
 		if (text.startsWith(' ')) return 1;
 		return 0;
-	}
-
-	function getListContinuation(textBeforeCursor: string) {
-		const taskMatch = textBeforeCursor.match(/^([ \t]*)([-*+]\s+\[[ xX]\]\s+)(.*)$/);
-		if (taskMatch) {
-			return { indent: taskMatch[1], raw: taskMatch[2], next: taskMatch[2] };
-		}
-
-		const unorderedMatch = textBeforeCursor.match(/^([ \t]*)([-*+]\s+)(.*)$/);
-		if (unorderedMatch) {
-			return { indent: unorderedMatch[1], raw: unorderedMatch[2], next: unorderedMatch[2] };
-		}
-
-		const orderedMatch = textBeforeCursor.match(/^([ \t]*)(\d+)([.)]\s+)(.*)$/);
-		if (orderedMatch) {
-			const nextNumber = Number.parseInt(orderedMatch[2], 10) + 1;
-			const raw = `${orderedMatch[2]}${orderedMatch[3]}`;
-			return { indent: orderedMatch[1], raw, next: `${nextNumber}${orderedMatch[3]}` };
-		}
-
-		return null;
 	}
 
 	function getIndentLevel(indent: string) {
