@@ -11,7 +11,11 @@
 		type ViewUpdate
 	} from '@codemirror/view';
 	import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-	import { markdown } from '@codemirror/lang-markdown';
+	import {
+		deleteMarkupBackward,
+		insertNewlineContinueMarkupCommand,
+		markdown
+	} from '@codemirror/lang-markdown';
 	import { HighlightStyle, syntaxHighlighting, syntaxTree, indentUnit } from '@codemirror/language';
 	import { tags } from '@lezer/highlight';
 	import { AlertCircle, FileText, Loader2 } from 'lucide-svelte';
@@ -42,6 +46,7 @@
 	const lineCount = $derived(value.length === 0 ? 1 : value.split('\n').length);
 	const characterCount = $derived(value.length);
 	const INDENT = '  ';
+	const continueMarkdownMarkup = insertNewlineContinueMarkupCommand({ nonTightLists: false });
 	let editorRoot = $state<HTMLDivElement | null>(null);
 	let editorView = $state<EditorView | null>(null);
 	let syncingScroll = false;
@@ -179,7 +184,7 @@
 			extensions: [
 				history(),
 				indentUnit.of(INDENT),
-				markdown(),
+				markdown({ addKeymap: false }),
 				syntaxHighlighting(markdownHighlightStyle),
 				codeBlockBgPlugin,
 				listIndentGuidePlugin,
@@ -198,7 +203,9 @@
 				Prec.high(
 					keymap.of([
 						{ key: 'Tab', run: addIndent },
-						{ key: 'Shift-Tab', run: removeIndent }
+						{ key: 'Shift-Tab', run: removeIndent },
+						{ key: 'Enter', run: continueMarkdownMarkup },
+						{ key: 'Backspace', run: deleteMarkupBackward }
 					])
 				),
 				keymap.of([...defaultKeymap, ...historyKeymap])
