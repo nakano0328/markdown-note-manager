@@ -42,3 +42,26 @@ test('ノート編集画面で未保存のまま移動すると確認される',
 	await expect(page).toHaveURL(new RegExp(`${notePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
 	await expect(page.getByText('保存待ち')).toBeVisible();
 });
+
+test('ノート保存後もサイドバーの開閉状態が維持される', async ({ page }) => {
+	await page.goto('/');
+
+	await page.getByRole('button', { name: '春' }).first().click();
+	await page.getByRole('button', { name: '線形代数', exact: true }).click();
+	await page.getByRole('link', { name: '01_行列と演算.md' }).click();
+
+	await expect(page).toHaveURL(new RegExp(`${notePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+	await expect(page.getByRole('link', { name: '01_行列と演算.md' })).toBeVisible();
+
+	await page.locator('.cm-content').click();
+	await page.keyboard.type(`\nE2E saved tree state ${Date.now()}`);
+	await expect(page.getByText('保存待ち')).toBeVisible();
+
+	const saveShortcut = process.platform === 'darwin' ? 'Meta+S' : 'Control+S';
+	await page.keyboard.press(saveShortcut);
+
+	await expect(page.getByText(/保存済み/)).toBeVisible();
+	await expect(page.getByRole('button', { name: '春' }).first()).toBeVisible();
+	await expect(page.getByRole('button', { name: '線形代数', exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: '01_行列と演算.md' })).toBeVisible();
+});

@@ -29,7 +29,10 @@
 		}
 	}
 
-	onMount(load);
+	onMount(() => {
+		treeState.loadFromStorage();
+		void load();
+	});
 
 	$effect(() => {
 		const version = treeState.version;

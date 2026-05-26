@@ -6,6 +6,8 @@
  * - localStorage にも保存し、リロード後も復元する。
  */
 
+import { browser } from '$app/environment';
+
 const STORAGE_KEY = 'mnm:tree-expanded:v1';
 
 class TreeState {
@@ -17,10 +19,10 @@ class TreeState {
 		return this.reloadVersion;
 	}
 
-	private ensureLoaded() {
+	loadFromStorage() {
 		if (this.loaded) return;
+		if (!browser) return;
 		this.loaded = true;
-		if (typeof localStorage === 'undefined') return;
 		try {
 			const raw = localStorage.getItem(STORAGE_KEY);
 			if (!raw) return;
@@ -37,8 +39,12 @@ class TreeState {
 		}
 	}
 
+	private ensureLoaded() {
+		this.loadFromStorage();
+	}
+
 	private persist() {
-		if (typeof localStorage === 'undefined') return;
+		if (!browser) return;
 		try {
 			localStorage.setItem(STORAGE_KEY, JSON.stringify(this.expanded));
 		} catch {
