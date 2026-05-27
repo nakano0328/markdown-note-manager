@@ -239,30 +239,25 @@
 								)}
 							>
 								<div class="group relative h-16 w-full">
-									<button
-										type="button"
-										onclick={() => handleCellClick(day, period, slot)}
-										class={cn(
-											'flex h-full w-full flex-col justify-between p-1.5 text-left transition hover:bg-accent',
-											!slot && 'text-muted-foreground'
-										)}
-										aria-label={slot
-											? `${day}曜${period}限 (${slot.subject}) のノートを新規作成`
-											: `${day}曜${period}限を追加`}
-									>
-										{#if slot}
-											<span class="line-clamp-2 text-xs font-medium leading-tight text-foreground">
-												{slot.subject}
-											</span>
-											{#if slot.directory}
-												<span class="truncate text-[10px] text-muted-foreground" title={slot.directory}>
-													{slot.directory}
+										<button
+											type="button"
+											onclick={() => handleCellClick(day, period, slot)}
+											class={cn(
+												'flex h-full w-full flex-col justify-between p-1.5 text-left transition hover:bg-accent',
+												!slot && 'text-muted-foreground'
+											)}
+											aria-label={slot
+												? `${day}曜${period}限 (${slot.subject}) のノートを新規作成`
+												: `${day}曜${period}限を追加`}
+										>
+											{#if slot}
+												<span class="line-clamp-3 text-[11px] font-medium leading-tight text-foreground">
+													{slot.subject}
 												</span>
+											{:else}
+												<span class="text-xs opacity-50 transition group-hover:opacity-100">＋</span>
 											{/if}
-										{:else}
-											<span class="text-xs opacity-50 transition group-hover:opacity-100">＋</span>
-										{/if}
-									</button>
+										</button>
 									{#if slot}
 										<button
 											type="button"

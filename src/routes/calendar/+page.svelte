@@ -712,12 +712,19 @@
 						<h2 class="text-sm font-semibold">
 							{selectedDate} ({weekdayLabelOf(selectedDate)})
 						</h2>
-						<div class="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-							<span>
+						<div class="mt-1 flex flex-wrap items-center gap-1">
+							<span
+								class={cn(
+									'rounded px-2 py-0.5 text-[10px] font-medium',
+									selectedDateTerm
+										? 'bg-violet-50 text-violet-700'
+										: 'bg-muted text-muted-foreground'
+								)}
+							>
 								{selectedDateTerm ? `学期: ${selectedDateTerm.label}` : '学期外'}
 							</span>
 							{#if selectedScheduleTerm && selectedScheduleTerm.id !== selectedDateTerm?.id}
-								<span>
+								<span class="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
 									実施元: {selectedScheduleTerm.label}
 								</span>
 							{/if}
