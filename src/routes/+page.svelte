@@ -270,6 +270,12 @@
 			<span>時間割の読み込みに失敗: {timetableError}</span>
 		</div>
 	{/if}
+	{#if timetableLoading && timetableSettings}
+		<div class="flex items-center gap-2 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+			<Loader2 class="size-4 animate-spin" />
+			<span>時間割を更新中…</span>
+		</div>
+	{/if}
 	{#if todayCalendarError}
 		<div class="flex items-start gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
 			<AlertCircle class="mt-0.5 size-4 shrink-0" />
@@ -300,7 +306,7 @@
 		</div>
 	{/if}
 
-	{#if timetableLoading}
+	{#if timetableLoading && !timetableSettings}
 		<div class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
 			<Loader2 class="size-4 animate-spin" /> 読み込み中…
 		</div>
