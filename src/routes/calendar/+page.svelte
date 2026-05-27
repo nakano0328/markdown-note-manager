@@ -102,22 +102,6 @@
 		const [y, m] = monthAnchor.split('-');
 		return `${y}年 ${Number(m)}月`;
 	});
-	const currentMonthDates = $derived(monthGrid.filter((date) => isSameMonth(date, monthAnchor)));
-	const monthTermSummary = $derived.by(() => {
-		if (!timetableSettings) return '';
-		const labels: string[] = [];
-		let hasOutOfTerm = false;
-		for (const date of currentMonthDates) {
-			const term = termForDate(timetableSettings, date);
-			if (!term) {
-				hasOutOfTerm = true;
-				continue;
-			}
-			if (!labels.includes(term.label)) labels.push(term.label);
-		}
-		if (hasOutOfTerm) labels.push('学期外');
-		return labels.length > 0 ? `月内: ${labels.join(' / ')}` : '';
-	});
 	const selectedSchedule = $derived(
 		resolveDaySchedule(selectedDate, timetableForDate, events, holidays, timetableSettings)
 	);
@@ -563,9 +547,6 @@
 		<div class="flex items-center gap-2">
 			<CalendarDays class="size-5 text-muted-foreground" />
 			<h1 class="text-xl font-bold">{monthTitle}</h1>
-			{#if monthTermSummary}
-				<span class="text-xs text-muted-foreground">{monthTermSummary}</span>
-			{/if}
 		</div>
 		<div class="flex items-center gap-1">
 			<button
@@ -695,7 +676,7 @@
 									</div>
 								</div>
 								{#if boundaryLabel}
-									<span class="mt-0.5 truncate rounded bg-violet-50 px-1 py-0.5 text-[9px] font-medium text-violet-700">
+									<span class="mt-0.5 truncate rounded bg-muted px-1 py-0.5 text-[9px] font-medium text-muted-foreground">
 										{boundaryLabel}
 									</span>
 								{/if}
@@ -731,19 +712,12 @@
 						<h2 class="text-sm font-semibold">
 							{selectedDate} ({weekdayLabelOf(selectedDate)})
 						</h2>
-						<div class="mt-1 flex flex-wrap items-center gap-1">
-							<span
-								class={cn(
-									'rounded px-2 py-0.5 text-[10px] font-medium',
-									selectedDateTerm
-										? 'bg-violet-50 text-violet-700'
-										: 'bg-muted text-muted-foreground'
-								)}
-							>
+						<div class="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+							<span>
 								{selectedDateTerm ? `学期: ${selectedDateTerm.label}` : '学期外'}
 							</span>
 							{#if selectedScheduleTerm && selectedScheduleTerm.id !== selectedDateTerm?.id}
-								<span class="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+								<span>
 									実施元: {selectedScheduleTerm.label}
 								</span>
 							{/if}

@@ -220,7 +220,7 @@
 						</span>
 					{/if}
 					{#if boundaryLabel}
-						<span class="mt-0.5 line-clamp-2 rounded bg-violet-50 px-1 py-0.5 text-[10px] font-medium text-violet-700">
+						<span class="mt-0.5 line-clamp-2 rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
 							{boundaryLabel}
 						</span>
 					{/if}
