@@ -132,7 +132,7 @@
 	function termBoundaryClass(date: string): string {
 		const term = termForDate(timetableSettings, date);
 		if (!term) return '';
-		if (date === term.startsAt) return 'bg-emerald-50 text-emerald-700';
+		if (date === term.startsAt) return 'bg-sky-50 text-sky-700';
 		if (date === term.endsAt) return 'bg-sky-50 text-sky-700';
 		return '';
 	}
@@ -632,7 +632,7 @@
 						</div>
 					{/each}
 				</div>
-					<div class="grid grid-cols-7 gap-1">
+				<div class="grid grid-cols-7 gap-1">
 						{#each monthGrid as date (date)}
 							{@const schedule = resolveDaySchedule(date, timetableForDate, events, holidays, timetableSettings)}
 							{@const wd = weekdayLabelOf(date)}
@@ -646,7 +646,7 @@
 									'flex h-24 flex-col items-stretch rounded border p-1 text-left transition hover:border-primary/60',
 									!inMonth && 'bg-muted/30 text-muted-foreground/70',
 									date === selectedDate && 'border-primary ring-1 ring-primary',
-									date === today && 'bg-primary/5'
+									date === today && 'border-primary bg-primary/10 ring-2 ring-primary/70'
 								)}
 							>
 								<div class="flex items-baseline justify-between gap-1">
@@ -715,11 +715,11 @@
 								{/if}
 							</button>
 						{/each}
-					</div>
+				</div>
 			{/if}
-			</section>
+		</section>
 
-			<aside class="rounded-lg border bg-white p-3">
+		<aside class="rounded-lg border bg-white p-3">
 				<div class="mb-2 flex items-center justify-between gap-2">
 					<div class="min-w-0">
 						<h2 class="text-sm font-semibold">

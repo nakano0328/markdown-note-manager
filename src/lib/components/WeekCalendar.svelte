@@ -99,7 +99,7 @@
 	function termBoundaryClass(date: string): string {
 		const term = termForDate(settings, date);
 		if (!term) return '';
-		if (date === term.startsAt) return 'bg-emerald-50 text-emerald-700';
+		if (date === term.startsAt) return 'bg-sky-50 text-sky-700';
 		if (date === term.endsAt) return 'bg-sky-50 text-sky-700';
 		return '';
 	}
@@ -204,7 +204,7 @@
 				<li
 					class={cn(
 						'flex h-28 flex-col rounded border p-1.5 text-left transition',
-						isToday(date) && 'border-primary bg-primary/5',
+						isToday(date) && 'border-primary bg-primary/10 ring-2 ring-primary/70',
 						(schedule.isWeekend || holidayName) && !isToday(date) && 'bg-muted/30'
 					)}
 				>
