@@ -645,7 +645,7 @@
 								class={cn(
 									'flex h-24 flex-col items-stretch rounded border p-1 text-left transition hover:border-primary/60',
 									!inMonth && 'bg-muted/30 text-muted-foreground/70',
-									date === selectedDate && 'border-primary',
+									date === selectedDate && 'border-primary ring-1 ring-primary',
 									date === today && 'border-primary bg-primary/10'
 								)}
 							>
