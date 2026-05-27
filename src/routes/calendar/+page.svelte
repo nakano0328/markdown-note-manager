@@ -129,6 +129,14 @@
 		return null;
 	}
 
+	function termBoundaryClass(date: string): string {
+		const term = termForDate(timetableSettings, date);
+		if (!term) return '';
+		if (date === term.startsAt) return 'bg-emerald-50 text-emerald-700';
+		if (date === term.endsAt) return 'bg-sky-50 text-sky-700';
+		return '';
+	}
+
 	function termIdsForDates(settings: TimetableSettings, dates: string[]): string[] {
 		const ids: string[] = [];
 		for (const date of dates) {
@@ -676,7 +684,12 @@
 									</div>
 								</div>
 								{#if boundaryLabel}
-									<span class="mt-0.5 truncate rounded bg-muted px-1 py-0.5 text-[9px] font-medium text-muted-foreground">
+									<span
+										class={cn(
+											'mt-0.5 truncate rounded px-1 py-0.5 text-[9px] font-medium',
+											termBoundaryClass(date)
+										)}
+									>
 										{boundaryLabel}
 									</span>
 								{/if}
@@ -712,19 +725,12 @@
 						<h2 class="text-sm font-semibold">
 							{selectedDate} ({weekdayLabelOf(selectedDate)})
 						</h2>
-						<div class="mt-1 flex flex-wrap items-center gap-1">
-							<span
-								class={cn(
-									'rounded px-2 py-0.5 text-[10px] font-medium',
-									selectedDateTerm
-										? 'bg-violet-50 text-violet-700'
-										: 'bg-muted text-muted-foreground'
-								)}
-							>
+						<div class="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+							<span>
 								{selectedDateTerm ? `学期: ${selectedDateTerm.label}` : '学期外'}
 							</span>
 							{#if selectedScheduleTerm && selectedScheduleTerm.id !== selectedDateTerm?.id}
-								<span class="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+								<span>
 									実施元: {selectedScheduleTerm.label}
 								</span>
 							{/if}

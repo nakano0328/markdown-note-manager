@@ -96,6 +96,14 @@
 		return null;
 	}
 
+	function termBoundaryClass(date: string): string {
+		const term = termForDate(settings, date);
+		if (!term) return '';
+		if (date === term.startsAt) return 'bg-emerald-50 text-emerald-700';
+		if (date === term.endsAt) return 'bg-sky-50 text-sky-700';
+		return '';
+	}
+
 	const requiredTermIds = $derived.by(() => {
 		if (!settings) return [];
 		const ids: string[] = [];
@@ -220,7 +228,12 @@
 						</span>
 					{/if}
 					{#if boundaryLabel}
-						<span class="mt-0.5 line-clamp-2 rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
+						<span
+							class={cn(
+								'mt-0.5 line-clamp-2 rounded px-1 py-0.5 text-[10px] font-medium',
+								termBoundaryClass(date)
+							)}
+						>
 							{boundaryLabel}
 						</span>
 					{/if}
