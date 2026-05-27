@@ -5,7 +5,7 @@
 		FileText,
 		RefreshCw,
 		CheckCircle2,
-		CalendarClock,
+		CalendarCheck2,
 		ChevronUp,
 		Equal,
 		ChevronDown
@@ -215,7 +215,7 @@
 				{#each bucketedTasks as group (group.bucket)}
 					<div class={cn('rounded border p-2', BUCKET_STYLE[group.bucket])}>
 						<div class="mb-1 flex items-center gap-2 text-xs font-semibold">
-							<CalendarClock class="size-3.5" />
+							<CalendarCheck2 class="size-3.5" />
 							{BUCKET_LABEL[group.bucket]}
 							<span class="rounded bg-white/60 px-1 py-0.5 text-[10px] font-medium">
 								{group.items.length}
@@ -250,7 +250,7 @@
 											{#if task.dueDate}
 												<span
 													class={cn(
-														'rounded px-1.5 py-0.5 text-[10px] font-medium',
+														'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
 														group.bucket === 'overdue'
 															? 'bg-red-200 text-red-900'
 															: group.bucket === 'today'
@@ -258,6 +258,7 @@
 																: 'bg-muted text-muted-foreground'
 													)}
 												>
+													<CalendarCheck2 class="size-3" />
 													{task.dueDate}（{dueLabel(task.dueDate)}）
 												</span>
 											{/if}

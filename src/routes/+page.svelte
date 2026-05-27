@@ -317,7 +317,7 @@
 			calendarError={todayCalendarError}
 		/>
 
-		<WeekCalendar {timetable} settings={timetableSettings} />
+		<WeekCalendar {timetable} settings={timetableSettings} {viewedTerm} />
 
 		<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 			<TimetableGrid

@@ -49,11 +49,6 @@
 		errorMessage = null;
 	}
 
-	function resetToDefault() {
-		draft = DEFAULT_PERIOD_TIMES.map((p) => ({ start: p.start, end: p.end }));
-		errorMessage = null;
-	}
-
 	function validate(): string | null {
 		const HHMM = /^\d{2}:\d{2}$/;
 		for (let i = 0; i < draft.length; i++) {
@@ -161,13 +156,6 @@
 					>
 						<Plus class="size-3" />
 						コマを増やす
-					</button>
-					<button
-						type="button"
-						onclick={resetToDefault}
-						class="ml-1 inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-accent"
-					>
-						標準に戻す
 					</button>
 				</div>
 				<span class="text-[10px] text-muted-foreground">合計 {draft.length} コマ</span>

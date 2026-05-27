@@ -27,7 +27,8 @@
 		formatLocalDate,
 		isSameMonth,
 		parseDate,
-		resolveDaySchedule
+		resolveDaySchedule,
+		termForDate
 	} from '$lib/calendar';
 	import { enabledPeriods, effectivePeriodTimes } from '$lib/period-times';
 	import { WEEKDAYS } from '$lib/types';
@@ -60,11 +61,19 @@
 		directory: string;
 	};
 
+	type TimetableResponse = {
+		timetable: Timetable;
+		settings: TimetableSettings;
+		activeTerm: TimetableTerm;
+		viewedTerm: TimetableTerm;
+	};
+
 	const today = formatLocalDate(new Date());
 	const HEAD_DAYS = ['日', '月', '火', '水', '木', '金', '土'] as const;
 
 	let monthAnchor = $state(today.slice(0, 7) + '-01');
 	let timetable = $state<Timetable>({});
+	let timetableByTermId = $state<Record<string, Timetable>>({});
 	let activeTerm = $state<TimetableTerm | null>(null);
 	let viewedTerm = $state<TimetableTerm | null>(null);
 	let timetableSettings = $state<TimetableSettings | null>(null);
@@ -93,13 +102,95 @@
 		const [y, m] = monthAnchor.split('-');
 		return `${y}年 ${Number(m)}月`;
 	});
+	const currentMonthDates = $derived(monthGrid.filter((date) => isSameMonth(date, monthAnchor)));
+	const monthTermSummary = $derived.by(() => {
+		if (!timetableSettings) return '';
+		const labels: string[] = [];
+		let hasOutOfTerm = false;
+		for (const date of currentMonthDates) {
+			const term = termForDate(timetableSettings, date);
+			if (!term) {
+				hasOutOfTerm = true;
+				continue;
+			}
+			if (!labels.includes(term.label)) labels.push(term.label);
+		}
+		if (hasOutOfTerm) labels.push('学期外');
+		return labels.length > 0 ? `月内: ${labels.join(' / ')}` : '';
+	});
 	const selectedSchedule = $derived(
-		resolveDaySchedule(selectedDate, timetable, events, holidays, timetableSettings)
+		resolveDaySchedule(selectedDate, timetableForDate, events, holidays, timetableSettings)
 	);
+	const selectedDateTerm = $derived(termForDate(timetableSettings, selectedDate));
+	const selectedBaseDate = $derived(selectedSchedule.inboundMove?.fromDate ?? selectedDate);
+	const selectedScheduleTerm = $derived(termForDate(timetableSettings, selectedBaseDate));
+	const selectedTimetable = $derived(timetableForDate(selectedBaseDate));
 	const selectedDayEvents = $derived(events.filter((e) => e.date === selectedDate));
 	const allowedPeriods = $derived(enabledPeriods(timetableSettings));
 	const allowedPeriodSet = $derived(new Set(allowedPeriods));
 	const periodTimesList = $derived(effectivePeriodTimes(timetableSettings));
+
+	function timetableForDate(date: string): Timetable {
+		const term = termForDate(timetableSettings, date);
+		if (!term) return {};
+		if (viewedTerm?.id === term.id) return timetable;
+		return timetableByTermId[term.id] ?? {};
+	}
+
+	function termBoundaryLabel(date: string): string | null {
+		const term = termForDate(timetableSettings, date);
+		if (!term) return null;
+		if (date === term.startsAt) return `${term.label} 開始`;
+		if (date === term.endsAt) return `${term.label} 終了`;
+		return null;
+	}
+
+	function termIdsForDates(settings: TimetableSettings, dates: string[]): string[] {
+		const ids: string[] = [];
+		for (const date of dates) {
+			const term = termForDate(settings, date);
+			if (term && !ids.includes(term.id)) ids.push(term.id);
+		}
+		return ids;
+	}
+
+	function timetableSourceDates(anchor: string, sourceEvents: CalendarEvent[]): string[] {
+		const dates = buildMonthGrid(anchor);
+		for (const event of sourceEvents) {
+			if (event.type === 'date_move') dates.push(event.fromDate);
+		}
+		return dates;
+	}
+
+	async function fetchTimetable(params: URLSearchParams): Promise<TimetableResponse> {
+		const res = await fetch(`/api/timetable?${params}`);
+		if (!res.ok) {
+			const body = await res.json().catch(() => ({ message: res.statusText }));
+			throw new Error(body.message ?? `Failed to load timetable (${res.status})`);
+		}
+		return (await res.json()) as TimetableResponse;
+	}
+
+	async function fetchTimetableMap(
+		termIds: string[],
+		primary: TimetableResponse
+	): Promise<Record<string, Timetable>> {
+		const next: Record<string, Timetable> = {
+			[primary.viewedTerm.id]: primary.timetable ?? {}
+		};
+		const missing = termIds.filter((termId) => termId !== primary.viewedTerm.id);
+		const responses = await Promise.all(
+			missing.map((termId) => {
+				const params = new URLSearchParams();
+				params.set('termId', termId);
+				return fetchTimetable(params);
+			})
+		);
+		for (const response of responses) {
+			next[response.viewedTerm.id] = response.timetable ?? {};
+		}
+		return next;
+	}
 
 	async function loadDirectories() {
 		try {
@@ -158,7 +249,7 @@
 	const slotEditorDay = $derived<Weekday>(slotEditing?.day ?? '月');
 	const slotEditorPeriod = $derived(slotEditing?.period ?? '1');
 	const slotEditorCurrent = $derived<TimetableSlot | null>(
-		slotEditing ? (timetable[slotEditing.day]?.[slotEditing.period] ?? null) : null
+		slotEditing ? (selectedTimetable[slotEditing.day]?.[slotEditing.period] ?? null) : null
 	);
 	const slotEditorRemainingPeriods = $derived(
 		slotEditing && allowedPeriods.includes(slotEditing.period)
@@ -166,29 +257,22 @@
 			: [slotEditorPeriod]
 	);
 	const slotEditorDefaultStart = $derived<string>(
-		pickTermForDate(selectedDate)?.id ?? viewedTerm?.id ?? ''
+		selectedScheduleTerm?.id ?? selectedDateTerm?.id ?? viewedTerm?.id ?? ''
 	);
 
-	async function loadTimetable(anchor = monthAnchor) {
+	async function loadTimetable(anchor = monthAnchor, sourceEvents = events) {
 		const id = ++timetableRequestId;
 		loadingTimetable = true;
 		timetableError = null;
 		try {
 			const params = new URLSearchParams();
 			params.set('date', anchor);
-			const res = await fetch(`/api/timetable${params.size ? `?${params}` : ''}`);
-			if (!res.ok) {
-				const body = await res.json().catch(() => ({ message: res.statusText }));
-				throw new Error(body.message ?? `Failed to load timetable (${res.status})`);
-			}
-			const data = (await res.json()) as {
-				timetable: Timetable;
-				settings: TimetableSettings;
-				activeTerm: TimetableTerm;
-				viewedTerm: TimetableTerm;
-			};
+			const data = await fetchTimetable(params);
+			const termIds = termIdsForDates(data.settings, timetableSourceDates(anchor, sourceEvents));
+			const termMap = await fetchTimetableMap(termIds, data);
 			if (id !== timetableRequestId) return;
 			timetable = data.timetable ?? {};
+			timetableByTermId = termMap;
 			timetableSettings = data.settings;
 			activeTerm = data.activeTerm;
 			viewedTerm = data.viewedTerm;
@@ -210,16 +294,12 @@
 			const body = await res.json().catch(() => ({ message: res.statusText }));
 			throw new Error(body.message ?? `Failed to update term (${res.status})`);
 		}
-		const data = (await res.json()) as {
-			timetable: Timetable;
-			settings: TimetableSettings;
-			activeTerm: TimetableTerm;
-			viewedTerm: TimetableTerm;
-		};
+		const data = (await res.json()) as TimetableResponse;
 		timetableSettings = data.settings;
 		activeTerm = data.activeTerm;
 		viewedTerm = data.viewedTerm;
 		timetable = data.timetable ?? {};
+		await loadTimetable(monthAnchor, events);
 	}
 
 	async function handlePeriodTimesChange(periodTimes: PeriodTime[]) {
@@ -232,26 +312,15 @@
 			const body = await res.json().catch(() => ({ message: res.statusText }));
 			throw new Error(body.message ?? `Failed to update period times (${res.status})`);
 		}
-		const data = (await res.json()) as {
-			timetable: Timetable;
-			settings: TimetableSettings;
-			activeTerm: TimetableTerm;
-			viewedTerm: TimetableTerm;
-		};
+		const data = (await res.json()) as TimetableResponse;
 		timetableSettings = data.settings;
 		activeTerm = data.activeTerm;
 		viewedTerm = data.viewedTerm;
 		timetable = data.timetable ?? {};
+		timetableByTermId = { ...timetableByTermId, [data.viewedTerm.id]: data.timetable ?? {} };
 	}
 
-	function pickTermForDate(date: string): TimetableTerm | null {
-		if (!timetableSettings) return null;
-		return (
-			timetableSettings.terms.find((term) => term.startsAt <= date && date <= term.endsAt) ?? null
-		);
-	}
-
-	async function loadCalendar(anchor = monthAnchor) {
+	async function loadCalendar(anchor = monthAnchor): Promise<CalendarEvent[] | null> {
 		const id = ++calendarRequestId;
 		const grid = buildMonthGrid(anchor);
 		const from = grid[0];
@@ -265,19 +334,22 @@
 				throw new Error(body.message ?? `Failed to load calendar (${res.status})`);
 			}
 			const data = (await res.json()) as { events: CalendarEvent[]; holidays: PublicHoliday[] };
-			if (id !== calendarRequestId) return;
+			if (id !== calendarRequestId) return null;
 			events = data.events;
 			holidays = data.holidays;
+			return data.events;
 		} catch (e) {
-			if (id !== calendarRequestId) return;
+			if (id !== calendarRequestId) return null;
 			calendarError = e instanceof Error ? e.message : 'Unknown error';
+			return null;
 		} finally {
 			if (id === calendarRequestId) loadingCalendar = false;
 		}
 	}
 
 	async function loadMonth(anchor = monthAnchor) {
-		await Promise.all([loadTimetable(anchor), loadCalendar(anchor)]);
+		const loadedEvents = await loadCalendar(anchor);
+		await loadTimetable(anchor, loadedEvents ?? events);
 	}
 
 	function setMonth(anchor: string, dateToSelect = anchor) {
@@ -432,11 +504,14 @@
 				throw new Error(body.message ?? `Failed to save (${res.status})`);
 			}
 			const data = (await res.json()) as { event: CalendarEvent };
+			let nextEvents: CalendarEvent[];
 			if (isEdit) {
-				events = events.map((event) => (event.id === data.event.id ? data.event : event));
+				nextEvents = events.map((event) => (event.id === data.event.id ? data.event : event));
 			} else {
-				events = [...events, data.event];
+				nextEvents = [...events, data.event];
 			}
+			events = nextEvents;
+			void loadTimetable(monthAnchor, nextEvents);
 			draft = null;
 		} catch (e) {
 			saveError = e instanceof Error ? e.message : 'Unknown error';
@@ -455,7 +530,9 @@
 				const body = await res.json().catch(() => ({ message: res.statusText }));
 				throw new Error(body.message ?? `Failed to delete (${res.status})`);
 			}
-			events = events.filter((e) => e.id !== event.id);
+			const nextEvents = events.filter((e) => e.id !== event.id);
+			events = nextEvents;
+			void loadTimetable(monthAnchor, nextEvents);
 		} catch (e) {
 			calendarError = e instanceof Error ? e.message : 'Unknown error';
 		}
@@ -486,8 +563,8 @@
 		<div class="flex items-center gap-2">
 			<CalendarDays class="size-5 text-muted-foreground" />
 			<h1 class="text-xl font-bold">{monthTitle}</h1>
-			{#if viewedTerm}
-				<span class="text-xs text-muted-foreground">({viewedTerm.label} の時間割)</span>
+			{#if monthTermSummary}
+				<span class="text-xs text-muted-foreground">{monthTermSummary}</span>
 			{/if}
 		</div>
 		<div class="flex items-center gap-1">
@@ -566,93 +643,118 @@
 						</div>
 					{/each}
 				</div>
-				<div class="grid grid-cols-7 gap-1">
-					{#each monthGrid as date (date)}
-						{@const schedule = resolveDaySchedule(date, timetable, events, holidays, timetableSettings)}
-						{@const wd = weekdayLabelOf(date)}
-						{@const inMonth = isSameMonth(date, monthAnchor)}
-						{@const holidayLabel = schedule.publicHoliday?.name ?? schedule.schoolHoliday?.title ?? null}
-						<button
-							type="button"
-							onclick={() => (selectedDate = date)}
-							class={cn(
-								'flex h-24 flex-col items-stretch rounded border p-1 text-left transition hover:border-primary/60',
-								!inMonth && 'bg-muted/30 text-muted-foreground/70',
-								date === selectedDate && 'border-primary ring-1 ring-primary',
-								date === today && 'bg-primary/5'
-							)}
-						>
-							<div class="flex items-baseline justify-between gap-1">
-								<span
-									class={cn(
-										'text-xs font-semibold',
-										wd === '日' && 'text-red-600',
-										wd === '土' && 'text-blue-600',
-										date === today && 'text-primary'
-									)}
-								>
-									{Number(date.split('-')[2])}
-								</span>
-								<div class="flex shrink-0 items-center gap-0.5">
-									{#if schedule.inboundMove}
-										<span
-											class="rounded bg-emerald-100 px-1 text-[9px] font-medium text-emerald-800"
-											title={`${schedule.inboundMove.fromDate} から移動`}
-										>
-											←{schedule.inboundMove.fromDate.slice(5)}
-										</span>
-									{:else if schedule.swapEvent}
-										<span class="rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-800">
-											→{schedule.swapEvent.followsDay}
-										</span>
-									{/if}
-									{#if schedule.outboundMoves.length > 0}
-										<span
-											class="rounded bg-emerald-50 px-1 text-[9px] font-medium text-emerald-700"
-											title={`${schedule.outboundMoves[0].date} へ移動`}
-										>
-											→{schedule.outboundMoves[0].date.slice(5)}
-										</span>
-									{/if}
-								</div>
-							</div>
-							{#if holidayLabel}
-								<span class="mt-0.5 line-clamp-2 rounded bg-red-100 px-1 py-0.5 text-[10px] font-medium text-red-700">
-									{holidayLabel}
-								</span>
-							{:else}
-								{@const slotted = schedule.periods.filter((p) => allowedPeriodSet.has(p.period) && p.slot)}
-								<ul class="mt-0.5 min-h-0 flex-1 space-y-0.5 overflow-hidden text-[10px]">
-									{#each slotted.slice(0, 3) as entry (entry.period)}
-										<li class="flex items-center gap-1 truncate">
-											<span class="shrink-0 text-[9px] text-muted-foreground">{entry.period}</span>
-											<span class={cn('truncate', entry.source === 'override' && 'font-medium text-amber-700')}>
-												{entry.slot?.subject}
+					<div class="grid grid-cols-7 gap-1">
+						{#each monthGrid as date (date)}
+							{@const schedule = resolveDaySchedule(date, timetableForDate, events, holidays, timetableSettings)}
+							{@const wd = weekdayLabelOf(date)}
+							{@const inMonth = isSameMonth(date, monthAnchor)}
+							{@const holidayLabel = schedule.publicHoliday?.name ?? schedule.schoolHoliday?.title ?? null}
+							{@const boundaryLabel = termBoundaryLabel(date)}
+							<button
+								type="button"
+								onclick={() => (selectedDate = date)}
+								class={cn(
+									'flex h-24 flex-col items-stretch rounded border p-1 text-left transition hover:border-primary/60',
+									!inMonth && 'bg-muted/30 text-muted-foreground/70',
+									date === selectedDate && 'border-primary ring-1 ring-primary',
+									date === today && 'bg-primary/5'
+								)}
+							>
+								<div class="flex items-baseline justify-between gap-1">
+									<span
+										class={cn(
+											'text-xs font-semibold',
+											wd === '日' && 'text-red-600',
+											wd === '土' && 'text-blue-600',
+											date === today && 'text-primary'
+										)}
+									>
+										{Number(date.split('-')[2])}
+									</span>
+									<div class="flex shrink-0 items-center gap-0.5">
+										{#if schedule.inboundMove}
+											<span
+												class="rounded bg-emerald-100 px-1 text-[9px] font-medium text-emerald-800"
+												title={`${schedule.inboundMove.fromDate} から移動`}
+											>
+												←{schedule.inboundMove.fromDate.slice(5)}
 											</span>
-										</li>
-									{/each}
-									{#if slotted.length > 3}
-										<li class="text-[9px] text-muted-foreground">+{slotted.length - 3}</li>
-									{/if}
-								</ul>
-							{/if}
-						</button>
-					{/each}
-				</div>
+										{:else if schedule.swapEvent}
+											<span class="rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-800">
+												→{schedule.swapEvent.followsDay}
+											</span>
+										{/if}
+										{#if schedule.outboundMoves.length > 0}
+											<span
+												class="rounded bg-emerald-50 px-1 text-[9px] font-medium text-emerald-700"
+												title={`${schedule.outboundMoves[0].date} へ移動`}
+											>
+												→{schedule.outboundMoves[0].date.slice(5)}
+											</span>
+										{/if}
+									</div>
+								</div>
+								{#if boundaryLabel}
+									<span class="mt-0.5 truncate rounded bg-violet-50 px-1 py-0.5 text-[9px] font-medium text-violet-700">
+										{boundaryLabel}
+									</span>
+								{/if}
+								{#if holidayLabel}
+									<span class="mt-0.5 line-clamp-2 rounded bg-red-100 px-1 py-0.5 text-[10px] font-medium text-red-700">
+										{holidayLabel}
+									</span>
+								{:else}
+									{@const slotted = schedule.periods.filter((p) => allowedPeriodSet.has(p.period) && p.slot)}
+									<ul class="mt-0.5 min-h-0 flex-1 space-y-0.5 overflow-hidden text-[10px]">
+										{#each slotted.slice(0, 3) as entry (entry.period)}
+											<li class="flex items-center gap-1 truncate">
+												<span class="shrink-0 text-[9px] text-muted-foreground">{entry.period}</span>
+												<span class={cn('truncate', entry.source === 'override' && 'font-medium text-amber-700')}>
+													{entry.slot?.subject}
+												</span>
+											</li>
+										{/each}
+										{#if slotted.length > 3}
+											<li class="text-[9px] text-muted-foreground">+{slotted.length - 3}</li>
+										{/if}
+									</ul>
+								{/if}
+							</button>
+						{/each}
+					</div>
 			{/if}
-		</section>
+			</section>
 
-		<aside class="rounded-lg border bg-white p-3">
-			<div class="mb-2 flex items-center justify-between gap-2">
-				<h2 class="text-sm font-semibold">
-					{selectedDate} ({weekdayLabelOf(selectedDate)})
-				</h2>
-				{#if selectedSchedule.publicHoliday}
-					<span class="rounded bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
-						{selectedSchedule.publicHoliday.name}
-					</span>
-				{/if}
-			</div>
+			<aside class="rounded-lg border bg-white p-3">
+				<div class="mb-2 flex items-center justify-between gap-2">
+					<div class="min-w-0">
+						<h2 class="text-sm font-semibold">
+							{selectedDate} ({weekdayLabelOf(selectedDate)})
+						</h2>
+						<div class="mt-1 flex flex-wrap items-center gap-1">
+							<span
+								class={cn(
+									'rounded px-2 py-0.5 text-[10px] font-medium',
+									selectedDateTerm
+										? 'bg-violet-50 text-violet-700'
+										: 'bg-muted text-muted-foreground'
+								)}
+							>
+								{selectedDateTerm ? `学期: ${selectedDateTerm.label}` : '学期外'}
+							</span>
+							{#if selectedScheduleTerm && selectedScheduleTerm.id !== selectedDateTerm?.id}
+								<span class="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+									実施元: {selectedScheduleTerm.label}
+								</span>
+							{/if}
+						</div>
+					</div>
+					{#if selectedSchedule.publicHoliday}
+						<span class="shrink-0 rounded bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
+							{selectedSchedule.publicHoliday.name}
+						</span>
+					{/if}
+				</div>
 
 			<div class="mb-3 rounded border bg-muted/30 p-2">
 				<p class="mb-1 text-[11px] font-medium text-muted-foreground">この日の実効スケジュール</p>
@@ -698,13 +800,13 @@
 				</ul>
 			</div>
 
-			{#if selectedSchedule.weekday}
-				{@const baseDay = selectedSchedule.followsDay ?? selectedSchedule.weekday}
-				{@const baseSlots = timetable[baseDay] ?? {}}
-				<div class="mb-3 rounded border bg-white p-2">
-					<p class="mb-1 text-[11px] font-medium text-muted-foreground">
-						{baseDay}曜の時間割を登録・編集
-					</p>
+				{#if selectedSchedule.weekday}
+					{@const baseDay = selectedSchedule.followsDay ?? selectedSchedule.weekday}
+					{@const baseSlots = selectedTimetable[baseDay] ?? {}}
+					<div class="mb-3 rounded border bg-white p-2">
+						<p class="mb-1 text-[11px] font-medium text-muted-foreground">
+							{baseDay}曜の時間割を登録・編集
+						</p>
 					{#if slotError}
 						<div class="mb-1 flex items-start gap-2 rounded border border-red-300 bg-red-50 p-2 text-[10px] text-red-800">
 							<AlertCircle class="mt-0.5 size-3 shrink-0" />

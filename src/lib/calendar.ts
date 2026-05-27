@@ -9,11 +9,14 @@ import type {
 	TimetableSlot,
 	Timetable,
 	TimetableSettings,
+	TimetableTerm,
 	Weekday
 } from './types';
 import { WEEKDAYS } from './types';
 
 export const PERIODS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
+
+export type TimetableResolver = Timetable | ((date: string) => Timetable | null | undefined);
 
 export function formatLocalDate(date: Date): string {
 	const year = date.getFullYear();
@@ -87,9 +90,20 @@ export function isSameMonth(date: string, anchor: string): boolean {
 	return date.slice(0, 7) === anchor.slice(0, 7);
 }
 
+export function termForDate(
+	settings: TimetableSettings | null | undefined,
+	date: string
+): TimetableTerm | null {
+	return settings?.terms.find((term) => term.startsAt <= date && date <= term.endsAt) ?? null;
+}
+
+function resolveTimetable(timetable: TimetableResolver, date: string): Timetable {
+	return typeof timetable === 'function' ? (timetable(date) ?? {}) : timetable;
+}
+
 export function resolveDaySchedule(
 	date: string,
-	timetable: Timetable,
+	timetable: TimetableResolver,
 	events: CalendarEvent[],
 	holidays: PublicHoliday[],
 	settings?: TimetableSettings | null
@@ -112,12 +126,13 @@ export function resolveDaySchedule(
 		(event): event is PeriodOverrideEvent => event.type === 'period_override'
 	);
 	const publicHoliday = holidays.find((h) => h.date === date) ?? null;
-	const isInTerm =
-		!settings || settings.terms.some((term) => term.startsAt <= date && date <= term.endsAt);
 
 	const moveFollowsDay = inboundMove ? weekdayFromDate(inboundMove.fromDate) : null;
 	const followsDay = moveFollowsDay ?? swapEvent?.followsDay ?? weekday;
-	const baseSlots = isInTerm && followsDay ? (timetable[followsDay] ?? {}) : {};
+	const baseDate = inboundMove?.fromDate ?? date;
+	const isInTerm = !settings || termForDate(settings, baseDate) !== null;
+	const baseTimetable = resolveTimetable(timetable, baseDate);
+	const baseSlots = isInTerm && followsDay ? (baseTimetable[followsDay] ?? {}) : {};
 	const isCanceledDay = Boolean(schoolHoliday || outboundMoves.length > 0);
 
 	const periods = PERIODS.map((period) => {
