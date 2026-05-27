@@ -8,7 +8,8 @@
 		type TimetableSettings,
 		type TimetableSlot,
 		type TimetableTerm,
-		type TreeNode
+		type TreeNode,
+		type Weekday
 	} from '$lib/types';
 	import { cn } from '$lib/utils';
 	import { collectSubjectDirectories, persistTimetableSlots } from '$lib/timetable-client';
@@ -18,8 +19,8 @@
 	import PeriodTimesModal from './PeriodTimesModal.svelte';
 	import TimetableSlotEditor from './TimetableSlotEditor.svelte';
 
-	const DAYS = WEEKDAYS;
-	type Day = (typeof DAYS)[number];
+	const WEEKEND_DAYS = new Set<Weekday>(['土', '日']);
+	type Day = Weekday;
 
 	interface Props {
 		timetable: Timetable;
@@ -50,12 +51,16 @@
 	let saving = $state(false);
 	let termEditorOpen = $state(false);
 	let periodTimesEditorOpen = $state(false);
+	let showWeekends = $state(false);
 
 	let editingDay = $state<Day | null>(null);
 	let editingPeriod = $state<string | null>(null);
 
 	const periods = $derived(enabledPeriods(settings));
 	const periodTimes = $derived(effectivePeriodTimes(settings));
+	const visibleDays = $derived(
+		showWeekends ? WEEKDAYS : WEEKDAYS.filter((day) => !WEEKEND_DAYS.has(day))
+	);
 
 	const orderedTerms = $derived.by(() =>
 		[...(settings?.terms ?? [])].sort((a, b) => {
@@ -168,6 +173,13 @@
 					{/each}
 				</select>
 			{/if}
+			<label
+				class="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs font-medium text-foreground hover:bg-accent"
+				title="土日列を表示"
+			>
+				<input type="checkbox" bind:checked={showWeekends} class="size-3" />
+				<span>土日表示</span>
+			</label>
 			<button
 				type="button"
 				onclick={() => (periodTimesEditorOpen = true)}
@@ -199,46 +211,46 @@
 		</div>
 	{/if}
 
-	<div class="overflow-x-auto">
-		<table class="w-full table-fixed border-collapse border border-black text-sm">
-			<thead>
-				<tr>
-					<th class="w-24 border-b border-r bg-muted/50 px-2 py-1 text-xs font-medium text-muted-foreground"></th>
-					{#each DAYS as day (day)}
-						<th
-							class={cn(
-								'border-b border-r px-2 py-1 text-xs font-semibold',
-								todayDay === day ? 'bg-primary/10 text-primary' : 'bg-muted/40'
-							)}
-						>
-							{day}
-						</th>
-					{/each}
-				</tr>
-			</thead>
-			<tbody>
-				{#each periods as period, index (period)}
-					{@const pt = periodTimes[index]}
+		<div class="overflow-x-auto">
+			<table class="w-full table-fixed border-collapse border border-black text-sm">
+				<thead>
 					<tr>
-						<th
-							class="border-b border-r bg-muted/40 px-1.5 py-1 text-center text-xs font-medium text-muted-foreground"
-						>
-							<div class="font-semibold text-foreground">{period}限</div>
-							{#if pt}
-								<div class="mt-0.5 whitespace-nowrap text-[10px] font-normal leading-tight tabular-nums text-muted-foreground">
-									{pt.start}〜{pt.end}
-								</div>
-							{/if}
-						</th>
-						{#each DAYS as day (day)}
-							{@const slot = timetable[day]?.[period]}
-							<td
+						<th class="w-20 border-b border-r bg-muted/50 px-1 py-1 text-xs font-medium text-muted-foreground"></th>
+						{#each visibleDays as day (day)}
+							<th
 								class={cn(
-									'border-b border-r p-0 align-top',
-									todayDay === day && 'bg-primary/5'
+									'border-b border-r px-2 py-1 text-xs font-semibold',
+									todayDay === day ? 'bg-primary/10 text-primary' : 'bg-muted/40'
 								)}
 							>
-								<div class="group relative h-16 w-full">
+								{day}
+							</th>
+						{/each}
+					</tr>
+				</thead>
+				<tbody>
+					{#each periods as period, index (period)}
+						{@const pt = periodTimes[index]}
+						<tr>
+							<th
+								class="border-b border-r bg-muted/40 px-1 py-1 text-center text-xs font-medium text-muted-foreground"
+							>
+								<div class="font-semibold text-foreground">{period}限</div>
+								{#if pt}
+									<div class="mt-0.5 whitespace-nowrap text-[9px] font-normal leading-tight tabular-nums text-muted-foreground">
+										{pt.start}〜{pt.end}
+									</div>
+								{/if}
+							</th>
+							{#each visibleDays as day (day)}
+								{@const slot = timetable[day]?.[period]}
+								<td
+									class={cn(
+										'border-b border-r p-0 align-top',
+										todayDay === day && 'bg-primary/5'
+									)}
+								>
+									<div class="group relative h-16 w-full">
 										<button
 											type="button"
 											onclick={() => handleCellClick(day, period, slot)}
@@ -258,28 +270,28 @@
 												<span class="text-xs opacity-50 transition group-hover:opacity-100">＋</span>
 											{/if}
 										</button>
-									{#if slot}
-										<button
-											type="button"
-											onclick={(event) => {
-												event.stopPropagation();
-												openEditor(day, period);
-											}}
-											class="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-accent hover:text-foreground group-hover:opacity-100 focus:opacity-100"
-											aria-label={`${day}曜${period}限のコマを編集`}
-											title="コマを編集"
-										>
-											<Pencil class="size-3" />
-										</button>
-									{/if}
-								</div>
-							</td>
-						{/each}
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+										{#if slot}
+											<button
+												type="button"
+												onclick={(event) => {
+													event.stopPropagation();
+													openEditor(day, period);
+												}}
+												class="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-accent hover:text-foreground group-hover:opacity-100 focus:opacity-100"
+												aria-label={`${day}曜${period}限のコマを編集`}
+												title="コマを編集"
+											>
+												<Pencil class="size-3" />
+											</button>
+										{/if}
+									</div>
+								</td>
+							{/each}
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 </section>
 
 <TermSettingsModal

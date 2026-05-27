@@ -204,7 +204,7 @@
 				<li
 					class={cn(
 						'flex h-28 flex-col rounded border p-1.5 text-left transition',
-						isToday(date) && 'border-primary bg-primary/10 ring-1 ring-primary/70',
+						isToday(date) && 'border-primary bg-primary/10',
 						(schedule.isWeekend || holidayName) && !isToday(date) && 'bg-muted/30'
 					)}
 				>
