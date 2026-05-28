@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { AlertCircle, FilePlus, Loader2, Save, X } from 'lucide-svelte';
+	import { markNotesDirty } from '$lib/notes-sync';
 	import { cn } from '$lib/utils';
 
 	interface CreatedNote {
@@ -119,6 +120,7 @@
 				throw new Error(body.message ?? `作成に失敗しました (${res.status})`);
 			}
 			const data = (await res.json()) as CreatedNote;
+			markNotesDirty();
 			onCreated?.(data);
 			onClose();
 		} catch (e) {

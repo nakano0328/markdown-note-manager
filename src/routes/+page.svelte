@@ -6,6 +6,7 @@
 	import TimetableGrid from '$lib/components/TimetableGrid.svelte';
 	import WeekCalendar from '$lib/components/WeekCalendar.svelte';
 	import { formatLocalDate, resolveCurrentPeriod, resolveDaySchedule, weekdayFromDate } from '$lib/calendar';
+	import { markNotesDirty } from '$lib/notes-sync';
 	import { buildPeriodWindow } from '$lib/period-times';
 	import {
 		notificationPermission,
@@ -221,11 +222,13 @@
 
 		const data = (await res.json()) as { task: TaskItem | null };
 		if (!data.task) {
+			markNotesDirty();
 			await loadTasks();
 			return;
 		}
 
 		tasks = tasks.map((item) => (item.id === task.id ? data.task! : item));
+		markNotesDirty();
 	}
 
 	onMount(() => {

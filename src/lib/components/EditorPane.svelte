@@ -19,6 +19,7 @@
 	import { HighlightStyle, syntaxHighlighting, syntaxTree, indentUnit } from '@codemirror/language';
 	import { tags } from '@lezer/highlight';
 	import { AlertCircle, FileText, Loader2 } from 'lucide-svelte';
+	import { markNotesDirty } from '$lib/notes-sync';
 
 	type ScrollSource = 'editor' | 'preview';
 	type ImageInputSource = 'paste' | 'drop';
@@ -290,6 +291,7 @@
 			throw new Error(body.message ?? `画像の保存に失敗しました (${res.status})`);
 		}
 
+		markNotesDirty();
 		return body.markdown;
 	}
 

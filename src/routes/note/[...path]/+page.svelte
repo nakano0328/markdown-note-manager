@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import EditorPane from '$lib/components/EditorPane.svelte';
 	import PreviewPane from '$lib/components/PreviewPane.svelte';
+	import { markNotesDirty } from '$lib/notes-sync';
 	import { cn } from '$lib/utils';
 
 	type ViewMode = 'editor' | 'preview';
@@ -195,6 +196,7 @@
 			lastSavedContent = snapshot;
 			lastSavedAt = new Date();
 			saveStatus = content === snapshot ? 'saved' : 'pending';
+			markNotesDirty();
 		} catch (e) {
 			if (controller.signal.aborted || id !== saveRequestId) return;
 			saveStatus = 'error';

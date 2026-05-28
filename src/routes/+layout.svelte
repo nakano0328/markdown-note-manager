@@ -4,6 +4,7 @@
 	import NewNoteModal from '$lib/components/NewNoteModal.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { onDestroy, onMount } from 'svelte';
 	import {
 		Home,
 		PanelLeftClose,
@@ -15,6 +16,7 @@
 		AlertCircle
 	} from 'lucide-svelte';
 	import { cn } from '$lib/utils';
+	import { NOTES_DIRTY_EVENT } from '$lib/notes-sync';
 	import { newNote } from '$lib/stores/new-note.svelte';
 	import { treeState } from '$lib/stores/tree-state.svelte';
 
@@ -25,6 +27,7 @@
 	type PushStatus = 'idle' | 'pushing' | 'success' | 'error' | 'noop';
 	let pushStatus = $state<PushStatus>('idle');
 	let pushMessage = $state<string | null>(null);
+	let hasPendingChanges = $state(false);
 	let pushResetTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const breadcrumbs = $derived.by(() => {
@@ -68,9 +71,11 @@
 			}
 			if (body.pushed) {
 				pushStatus = 'success';
+				hasPendingChanges = false;
 				pushMessage = body.commitMessage ?? body.message ?? 'Pushed';
 			} else {
 				pushStatus = 'noop';
+				hasPendingChanges = false;
 				pushMessage = body.message ?? 'No changes';
 			}
 			schedulePushReset();
@@ -90,12 +95,46 @@
 					? 'bg-muted text-foreground'
 					: pushStatus === 'error'
 						? 'bg-red-600 text-white'
-						: 'bg-primary text-primary-foreground hover:bg-primary/90';
+						: hasPendingChanges
+							? 'bg-amber-500 text-white hover:bg-amber-600'
+							: 'bg-primary text-primary-foreground hover:bg-primary/90';
 	}
 
 	function encodeNotePath(rel: string): string {
 		return rel.split('/').map(encodeURIComponent).join('/');
 	}
+
+	async function loadGitStatus() {
+		try {
+			const res = await fetch('/api/git/status');
+			if (!res.ok) return;
+			const body = (await res.json()) as { dirty?: boolean };
+			hasPendingChanges = Boolean(body.dirty);
+		} catch {
+			// git 状態の表示に失敗しても編集操作は妨げない。
+		}
+	}
+
+	onMount(() => {
+		const handleNotesDirty = () => {
+			hasPendingChanges = true;
+			if (pushStatus === 'noop') {
+				pushStatus = 'idle';
+				pushMessage = null;
+			}
+		};
+
+		window.addEventListener(NOTES_DIRTY_EVENT, handleNotesDirty);
+		void loadGitStatus();
+
+		return () => {
+			window.removeEventListener(NOTES_DIRTY_EVENT, handleNotesDirty);
+		};
+	});
+
+	onDestroy(() => {
+		if (pushResetTimer) clearTimeout(pushResetTimer);
+	});
 </script>
 
 <div class="flex h-screen w-screen flex-col overflow-hidden">
@@ -168,7 +207,12 @@
 					'inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition disabled:opacity-70',
 					pushIconClasses()
 				)}
-				title={pushMessage ?? 'NOTES_DIR のローカル変更を git add/commit/push'}
+				title={
+					pushMessage ??
+					(hasPendingChanges
+						? '未同期の変更があります。NOTES_DIR のローカル変更を git add/commit/push'
+						: 'NOTES_DIR のローカル変更を git add/commit/push')
+				}
 			>
 				{#if pushStatus === 'pushing'}
 					<Loader2 class="size-3.5 animate-spin" />
@@ -187,6 +231,8 @@
 					Push 失敗
 				{:else if pushStatus === 'noop'}
 					変更なし
+				{:else if hasPendingChanges}
+					未同期
 				{:else}
 					Push
 				{/if}
