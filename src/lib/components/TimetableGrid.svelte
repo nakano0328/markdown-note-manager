@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { Clock, Loader2, Pencil, Settings } from 'lucide-svelte';
 	import {
 		WEEKDAYS,
 		type PeriodTime,
+		type SubjectNoteSummary,
 		type Timetable,
 		type TimetableSettings,
 		type TimetableSlot,
@@ -14,9 +16,11 @@
 	import { cn } from '$lib/utils';
 	import { collectSubjectDirectories, persistTimetableSlots } from '$lib/timetable-client';
 	import { newNote } from '$lib/stores/new-note.svelte';
+	import { treeState } from '$lib/stores/tree-state.svelte';
 	import { effectivePeriodTimes, enabledPeriods } from '$lib/period-times';
 	import TermSettingsModal from './TermSettingsModal.svelte';
 	import PeriodTimesModal from './PeriodTimesModal.svelte';
+	import SubjectNotesModal from './SubjectNotesModal.svelte';
 	import TimetableSlotEditor from './TimetableSlotEditor.svelte';
 
 	const WEEKEND_DAYS = new Set<Weekday>(['土', '日']);
@@ -55,6 +59,8 @@
 
 	let editingDay = $state<Day | null>(null);
 	let editingPeriod = $state<string | null>(null);
+	let selectedSlot = $state<TimetableSlot | null>(null);
+	let subjectNotesOpen = $state(false);
 
 	const periods = $derived(enabledPeriods(settings));
 	const periodTimes = $derived(effectivePeriodTimes(settings));
@@ -120,14 +126,37 @@
 
 	function handleCellClick(day: Day, period: string, slot: TimetableSlot | undefined) {
 		if (slot && slot.directory) {
-			newNote.request({
-				directory: slot.directory,
-				subject: slot.subject,
-				titleHint: ''
-			});
+			selectedSlot = slot;
+			subjectNotesOpen = true;
 			return;
 		}
 		openEditor(day, period);
+	}
+
+	function encodeNotePath(rel: string): string {
+		return rel.split('/').map(encodeURIComponent).join('/');
+	}
+
+	function closeSubjectNotes() {
+		subjectNotesOpen = false;
+		selectedSlot = null;
+	}
+
+	function createNoteForSelectedSlot() {
+		const slot = selectedSlot;
+		if (!slot) return;
+		closeSubjectNotes();
+		newNote.request({
+			directory: slot.directory,
+			subject: slot.subject,
+			titleHint: ''
+		});
+	}
+
+	function openSubjectNote(note: SubjectNoteSummary) {
+		closeSubjectNotes();
+		treeState.revealFile(note.path);
+		void goto(`/note/${encodeNotePath(note.path)}`);
 	}
 
 	function closeEditor() {
@@ -259,8 +288,9 @@
 												!slot && 'text-muted-foreground'
 											)}
 											aria-label={slot
-												? `${day}曜${period}限 (${slot.subject}) のノートを新規作成`
+												? `${day}曜${period}限 (${slot.subject}) のノートを開く`
 												: `${day}曜${period}限を追加`}
+											title={slot ? 'ノートを開く / 新規作成' : 'コマを追加'}
 										>
 											{#if slot}
 												<span class="line-clamp-3 text-[11px] font-medium leading-tight text-foreground">
@@ -325,4 +355,13 @@
 		commitSlot(slot, startTermId, endTermId, periodCount)}
 	onDelete={({ startTermId, endTermId }) => commitSlot(null, startTermId, endTermId)}
 	onClose={closeEditor}
+/>
+
+<SubjectNotesModal
+	open={subjectNotesOpen}
+	directory={selectedSlot?.directory ?? ''}
+	subject={selectedSlot?.subject ?? ''}
+	onClose={closeSubjectNotes}
+	onCreateNew={createNoteForSelectedSlot}
+	onOpenNote={openSubjectNote}
 />

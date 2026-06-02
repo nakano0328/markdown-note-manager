@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { getNotesDir, resolveSafePath } from '$lib/server/notes-dir';
-import type { NoteFrontmatter } from '$lib/types';
+import type { NoteFrontmatter, SubjectNoteSummary } from '$lib/types';
 import type { RequestHandler } from './$types';
 
 const FILENAME_PATTERN = /^(\d{2})_(.+)\.md$/;
@@ -28,6 +28,7 @@ interface NotePreviewResult {
 	location: string;
 	tags: string[];
 	previousFile: string | null;
+	notes: SubjectNoteSummary[];
 }
 
 function localToday(): string {
@@ -52,9 +53,12 @@ function pickStringArray(value: unknown): string[] {
 }
 
 interface ExistingNote {
+	path: string;
 	filename: string;
 	sequence: number;
+	sequenceLabel: string;
 	title: string;
+	date: string | null;
 	frontmatter: Partial<NoteFrontmatter>;
 }
 
@@ -68,14 +72,17 @@ async function readExistingNotes(absDir: string): Promise<ExistingNote[]> {
 	}
 
 	const notes: ExistingNote[] = [];
+	const root = getNotesDir();
 	for (const entry of entries) {
 		if (!entry.isFile()) continue;
 		const match = entry.name.match(FILENAME_PATTERN);
 		if (!match) continue;
 		const sequence = Number.parseInt(match[1], 10);
 		if (!Number.isFinite(sequence)) continue;
+		const sequenceLabel = match[1];
 		const titleFromName = match[2];
 		const abs = path.join(absDir, entry.name);
+		const relPath = path.relative(root, abs).split(path.sep).join('/');
 		let frontmatter: Partial<NoteFrontmatter> = {};
 		try {
 			const raw = await fs.readFile(abs, 'utf-8');
@@ -87,9 +94,13 @@ async function readExistingNotes(absDir: string): Promise<ExistingNote[]> {
 			// 継承候補の探索では、壊れた Frontmatter は無視する。
 		}
 		notes.push({
+			path: relPath,
 			filename: entry.name,
 			sequence,
-			title: typeof frontmatter.title === 'string' && frontmatter.title ? frontmatter.title : titleFromName,
+			sequenceLabel,
+			title:
+				typeof frontmatter.title === 'string' && frontmatter.title ? frontmatter.title : titleFromName,
+			date: typeof frontmatter.date === 'string' && frontmatter.date ? frontmatter.date : null,
 			frontmatter
 		});
 	}
@@ -135,7 +146,15 @@ async function buildPreview(directory: string, title: string | undefined): Promi
 		date: localToday(),
 		location: typeof inherited.location === 'string' ? inherited.location : '',
 		tags: pickStringArray(inherited.tags),
-		previousFile: latest?.filename ?? null
+		previousFile: latest?.filename ?? null,
+		notes: notes.map(({ path, filename, sequence, sequenceLabel, title, date }) => ({
+			path,
+			filename,
+			sequence,
+			sequenceLabel,
+			title,
+			date
+		}))
 	};
 }
 

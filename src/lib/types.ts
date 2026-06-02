@@ -6,6 +6,15 @@ export interface NoteFrontmatter {
 	tags?: string[];
 }
 
+export interface SubjectNoteSummary {
+	path: string;
+	filename: string;
+	sequence: number;
+	sequenceLabel: string;
+	title: string;
+	date: string | null;
+}
+
 export interface Timetable {
 	[dayOfWeek: string]: {
 		[period: string]: {
