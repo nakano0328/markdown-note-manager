@@ -28,6 +28,9 @@
 	let pushStatus = $state<PushStatus>('idle');
 	let pushMessage = $state<string | null>(null);
 	let hasPendingChanges = $state(false);
+	let pendingFileCount = $state(0);
+	let otherChangedFileCount = $state(0);
+	let aheadCommitCount = $state(0);
 	let pushResetTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const breadcrumbs = $derived.by(() => {
@@ -65,19 +68,26 @@
 				pushed?: boolean;
 				message?: string;
 				commitMessage?: string | null;
+				pendingFiles?: number;
+				otherChangedFiles?: number;
+				ahead?: number;
 			};
 			if (!res.ok || !body.ok) {
 				throw new Error(body.message ?? `Push に失敗しました (${res.status})`);
 			}
+			pendingFileCount = body.pendingFiles ?? 0;
+			otherChangedFileCount = body.otherChangedFiles ?? 0;
+			aheadCommitCount = body.ahead ?? 0;
 			if (body.pushed) {
 				pushStatus = 'success';
-				hasPendingChanges = false;
+				hasPendingChanges = pendingFileCount > 0 || aheadCommitCount > 0;
 				pushMessage = body.commitMessage ?? body.message ?? 'Pushed';
 			} else {
 				pushStatus = 'noop';
-				hasPendingChanges = false;
+				hasPendingChanges = pendingFileCount > 0 || aheadCommitCount > 0;
 				pushMessage = body.message ?? 'No changes';
 			}
+			void loadGitStatus();
 			schedulePushReset();
 		} catch (e) {
 			pushStatus = 'error';
@@ -108,8 +118,16 @@
 		try {
 			const res = await fetch('/api/git/status');
 			if (!res.ok) return;
-			const body = (await res.json()) as { dirty?: boolean };
+			const body = (await res.json()) as {
+				dirty?: boolean;
+				pendingFiles?: number;
+				otherChangedFiles?: number;
+				ahead?: number;
+			};
 			hasPendingChanges = Boolean(body.dirty);
+			pendingFileCount = body.pendingFiles ?? 0;
+			otherChangedFileCount = body.otherChangedFiles ?? 0;
+			aheadCommitCount = body.ahead ?? 0;
 		} catch {
 			// git 状態の表示に失敗しても編集操作は妨げない。
 		}
@@ -118,10 +136,12 @@
 	onMount(() => {
 		const handleNotesDirty = () => {
 			hasPendingChanges = true;
+			pendingFileCount = Math.max(pendingFileCount, 1);
 			if (pushStatus === 'noop') {
 				pushStatus = 'idle';
 				pushMessage = null;
 			}
+			void loadGitStatus();
 		};
 
 		window.addEventListener(NOTES_DIRTY_EVENT, handleNotesDirty);
@@ -210,8 +230,10 @@
 				title={
 					pushMessage ??
 					(hasPendingChanges
-						? '未同期の変更があります。NOTES_DIR のローカル変更を git add/commit/push'
-						: 'NOTES_DIR のローカル変更を git add/commit/push')
+						? `未同期の対象変更 ${pendingFileCount} 件、未 push commit ${aheadCommitCount} 件`
+						: otherChangedFileCount > 0
+							? `対象外の変更 ${otherChangedFileCount} 件は push しません`
+							: 'アプリで保存した変更を git add/commit/push')
 				}
 			>
 				{#if pushStatus === 'pushing'}
@@ -232,7 +254,9 @@
 				{:else if pushStatus === 'noop'}
 					変更なし
 				{:else if hasPendingChanges}
-					未同期
+					{pendingFileCount > 1 ? `未同期 ${pendingFileCount}` : '未同期'}
+				{:else if otherChangedFileCount > 0}
+					対象外あり
 				{:else}
 					Push
 				{/if}

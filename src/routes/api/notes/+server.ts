@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { getNotesDir, resolveSafePath } from '$lib/server/notes-dir';
+import { trackPendingPushFiles } from '$lib/server/pending-push';
 import type { NoteFrontmatter, SubjectNoteSummary } from '$lib/types';
 import type { RequestHandler } from './$types';
 
@@ -228,6 +229,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const fileContent = buildFrontmatter(frontmatter);
 	await fs.mkdir(absDir, { recursive: true });
 	await fs.writeFile(absPath, fileContent, 'utf-8');
+	await trackPendingPushFiles([relPath]);
 
 	return json({
 		path: relPath,

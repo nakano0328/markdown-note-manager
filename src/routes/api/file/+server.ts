@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { getNotesDir, resolveSafePath } from '$lib/server/notes-dir';
+import { trackPendingPushFiles, toNotesRelativePath } from '$lib/server/pending-push';
 import type { RequestHandler } from './$types';
 
 const NOTE_FILENAME_PATTERN = /^(\d{2})_(.+)\.md$/;
@@ -99,6 +100,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	await fs.mkdir(path.dirname(abs), { recursive: true });
 	await fs.writeFile(abs, body.content, 'utf-8');
+	await trackPendingPushFiles([toNotesRelativePath(abs)]);
 	return json({ path: body.path, ok: true });
 };
 
@@ -157,9 +159,11 @@ export const PATCH: RequestHandler = async ({ request }) => {
 
 	if (nextAbs === abs) {
 		await fs.writeFile(abs, nextContent, 'utf-8');
+		await trackPendingPushFiles([toNotesRelativePath(abs)]);
 	} else {
 		await fs.writeFile(nextAbs, nextContent, 'utf-8');
 		await fs.unlink(abs);
+		await trackPendingPushFiles([toNotesRelativePath(abs), toNotesRelativePath(nextAbs)]);
 	}
 
 	return json({

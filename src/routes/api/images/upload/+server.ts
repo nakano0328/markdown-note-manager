@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { resolveSafePath } from '$lib/server/notes-dir';
+import { trackPendingPushFiles } from '$lib/server/pending-push';
 import type { RequestHandler } from './$types';
 
 const IMAGE_EXTENSIONS_BY_TYPE: Record<string, string> = {
@@ -64,6 +65,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	await fs.mkdir(path.dirname(imageAbs), { recursive: true });
 	await fs.writeFile(imageAbs, data);
+	await trackPendingPushFiles([imageRelPath]);
 
 	return json({
 		fileName,

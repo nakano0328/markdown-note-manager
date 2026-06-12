@@ -3,6 +3,11 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { simpleGit, type SimpleGit, type StatusResult } from 'simple-git';
 import { getNotesDir } from '$lib/server/notes-dir';
+import {
+	clearPendingPushFiles,
+	getPendingPushFiles,
+	normalizePendingPath
+} from '$lib/server/pending-push';
 import type { RequestHandler } from './$types';
 
 const FILENAME_PATTERN = /^(\d{2})_(.+)\.md$/;
@@ -13,10 +18,10 @@ interface ChangedNote {
 	title: string;
 }
 
-function buildCommitMessage(status: StatusResult): string {
+function buildCommitMessage(files: string[]): string {
 	const candidates = new Set<string>();
-	for (const file of status.files) {
-		candidates.add(file.path);
+	for (const file of files) {
+		candidates.add(file);
 	}
 
 	const notes: ChangedNote[] = [];
@@ -43,6 +48,21 @@ function buildCommitMessage(status: StatusResult): string {
 
 	const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
 	return `notes update ${stamp}`;
+}
+
+function changedPathSet(status: StatusResult): Set<string> {
+	const paths = new Set<string>();
+	for (const file of status.files) {
+		paths.add(normalizePendingPath(file.path));
+		const renamedFrom = (file as { from?: string }).from;
+		if (renamedFrom) paths.add(normalizePendingPath(renamedFrom));
+	}
+	return paths;
+}
+
+function aheadCount(status: StatusResult): number {
+	const ahead = (status as { ahead?: unknown }).ahead;
+	return typeof ahead === 'number' && Number.isFinite(ahead) ? ahead : 0;
 }
 
 async function ensureGitRepo(git: SimpleGit, root: string) {
@@ -83,24 +103,77 @@ export const POST: RequestHandler = async () => {
 		await ensureRemote(git);
 
 		const status = await git.status();
-		if (status.files.length === 0) {
+		const pendingFiles = await getPendingPushFiles(root);
+		const changedPaths = changedPathSet(status);
+		const targetFiles = pendingFiles.filter((file) => changedPaths.has(file));
+		const otherChangedFiles = status.files.filter(
+			(file) => !pendingFiles.includes(normalizePendingPath(file.path))
+		).length;
+		const ahead = aheadCount(status);
+
+		if (status.files.length === 0 && ahead === 0) {
+			if (pendingFiles.length > 0) {
+				await clearPendingPushFiles(pendingFiles, root);
+			}
 			return json({
 				ok: true,
 				pushed: false,
 				message: 'No changes to commit',
 				commitMessage: null,
 				commit: null,
-				branch: status.current ?? null
+				branch: status.current ?? null,
+				pendingFiles: 0,
+				otherChangedFiles: 0,
+				ahead: 0
 			});
 		}
 
-		const commitMessage = buildCommitMessage(status);
-
-		await git.add(['-A']);
-		const commit = await git.commit(commitMessage);
-
 		const branch = status.current ?? (await git.branch()).current;
+
+		if (targetFiles.length === 0) {
+			if (ahead > 0 && pendingFiles.length > 0) {
+				const pushResult = branch ? await git.push('origin', branch) : await git.push();
+				await clearPendingPushFiles(pendingFiles, root);
+				return json({
+					ok: true,
+					pushed: true,
+					message: 'Pushed existing local commits to remote',
+					commitMessage: null,
+					commit: null,
+					branch,
+					pushSummary: pushResult.update ?? null,
+					pendingFiles: 0,
+					otherChangedFiles,
+					ahead
+				});
+			}
+
+			return json({
+				ok: true,
+				pushed: false,
+				message:
+					otherChangedFiles > 0
+						? `Push 対象の変更はありません。対象外の変更 ${otherChangedFiles} 件は残しました`
+						: ahead > 0
+							? `未 push commit ${ahead} 件は対象を確認できないため push しません`
+						: 'No changes to commit',
+				commitMessage: null,
+				commit: null,
+				branch,
+				pendingFiles: 0,
+				otherChangedFiles,
+				ahead
+			});
+		}
+
+		const commitMessage = buildCommitMessage(targetFiles);
+
+		await git.raw(['add', '--', ...targetFiles]);
+		await git.raw(['commit', '-m', commitMessage, '--', ...targetFiles]);
+		const commitHash = (await git.raw(['rev-parse', 'HEAD'])).trim();
+
 		const pushResult = branch ? await git.push('origin', branch) : await git.push();
+		const remainingPendingFiles = await clearPendingPushFiles(targetFiles, root);
 
 		return json({
 			ok: true,
@@ -108,12 +181,17 @@ export const POST: RequestHandler = async () => {
 			message: 'Pushed to remote',
 			commitMessage,
 			commit: {
-				hash: commit.commit,
-				branch: commit.branch,
-				summary: commit.summary
+				hash: commitHash,
+				branch,
+				summary: {
+					changes: targetFiles.length
+				}
 			},
 			branch,
-			pushSummary: pushResult.update ?? null
+			pushSummary: pushResult.update ?? null,
+			pendingFiles: remainingPendingFiles.length,
+			otherChangedFiles,
+			ahead
 		});
 	} catch (e) {
 		if (e && typeof e === 'object' && 'status' in e) throw e;
