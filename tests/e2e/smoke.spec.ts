@@ -65,3 +65,19 @@ test('ノート保存後もサイドバーの開閉状態が維持される', as
 	await expect(page.getByRole('button', { name: '線形代数', exact: true })).toBeVisible();
 	await expect(page.getByRole('link', { name: '01_行列と演算.md' })).toBeVisible();
 });
+
+test('ノート編集画面でタイトルを変更できる', async ({ page }) => {
+	await page.goto(notePath);
+
+	const nextTitle = `行列と演算リネーム${Date.now()}`;
+	await expect(page.getByLabel('ノートタイトル')).toHaveAttribute('readonly', '');
+	await page.getByRole('button', { name: 'タイトルを編集' }).click();
+	await expect(page.getByLabel('ノートタイトル')).not.toHaveAttribute('readonly', '');
+	await page.getByLabel('ノートタイトル').fill(nextTitle);
+	await page.getByRole('button', { name: 'タイトルを変更' }).click();
+
+	const encodedPath = `/note/1%E5%B9%B4%E7%94%9F/%E6%98%A5/%E7%B7%9A%E5%BD%A2%E4%BB%A3%E6%95%B0/01_${encodeURIComponent(nextTitle)}.md`;
+	await expect(page).toHaveURL(new RegExp(`${encodedPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+	await expect(page.getByRole('heading', { name: nextTitle })).toBeVisible();
+	await expect(page.getByRole('link', { name: `01_${nextTitle}.md` })).toBeVisible();
+});

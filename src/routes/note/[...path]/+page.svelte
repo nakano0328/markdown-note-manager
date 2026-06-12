@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { Check, Loader2, Pencil, X } from 'lucide-svelte';
 	import EditorPane from '$lib/components/EditorPane.svelte';
 	import PreviewPane from '$lib/components/PreviewPane.svelte';
 	import { markNotesDirty } from '$lib/notes-sync';
+	import { treeState } from '$lib/stores/tree-state.svelte';
 	import { cn } from '$lib/utils';
 
 	type ViewMode = 'editor' | 'preview';
@@ -26,10 +28,16 @@
 	let saveController: AbortController | null = null;
 	let scrollRatio = $state(0);
 	let scrollSource = $state<ScrollSource | null>(null);
+	let titleDraft = $state('');
+	let titleInput = $state<HTMLInputElement | null>(null);
+	let isTitleEditing = $state(false);
+	let renameStatus = $state<'idle' | 'renaming' | 'error'>('idle');
+	let renameError = $state<string | null>(null);
 	let requestId = 0;
 	let saveRequestId = 0;
 
 	const hasUnsavedChanges = $derived(!loading && content !== lastSavedContent);
+	const currentTitle = $derived(titleFromPath(filePath));
 	const saveStatusText = $derived.by(() => {
 		if (loading) return '読み込み中';
 		if (saveStatus === 'pending') return '保存待ち';
@@ -68,6 +76,10 @@
 		scrollRatio = 0;
 		scrollSource = null;
 		loading = true;
+		titleDraft = titleFromPath(path);
+		isTitleEditing = false;
+		renameStatus = 'idle';
+		renameError = null;
 
 		if (!path) {
 			errorMessage = 'ファイルパスが指定されていません';
@@ -154,17 +166,17 @@
 		};
 	});
 
-	async function saveContent() {
+	async function saveContent(): Promise<boolean> {
 		const path = filePath;
 		const snapshot = content;
 
 		clearSaveTimer();
 
-		if (loading || !path) return;
+		if (loading || !path) return false;
 		if (snapshot === lastSavedContent) {
 			saveError = null;
 			saveStatus = 'saved';
-			return;
+			return true;
 		}
 
 		const id = ++saveRequestId;
@@ -191,18 +203,110 @@
 				throw new Error(body.message ?? `保存に失敗しました (${res.status})`);
 			}
 
-			if (controller.signal.aborted || id !== saveRequestId) return;
+			if (controller.signal.aborted || id !== saveRequestId) return false;
 
 			lastSavedContent = snapshot;
 			lastSavedAt = new Date();
 			saveStatus = content === snapshot ? 'saved' : 'pending';
 			markNotesDirty();
+			return true;
 		} catch (e) {
-			if (controller.signal.aborted || id !== saveRequestId) return;
+			if (controller.signal.aborted || id !== saveRequestId) return false;
 			saveStatus = 'error';
 			saveError = e instanceof Error ? e.message : '保存に失敗しました';
+			return false;
 		} finally {
 			if (saveController === controller) saveController = null;
+		}
+	}
+
+	async function renameNote() {
+		const path = filePath;
+		const nextTitle = titleDraft.trim();
+		if (loading || renameStatus === 'renaming' || !path) return;
+		if (!nextTitle) {
+			renameStatus = 'error';
+			renameError = 'タイトルを入力してください';
+			return;
+		}
+		if (nextTitle === currentTitle) {
+			isTitleEditing = false;
+			return;
+		}
+
+		renameStatus = 'renaming';
+		renameError = null;
+
+		const saved = await saveContent();
+		if (!saved) {
+			renameStatus = 'error';
+			renameError = saveError ?? 'リネーム前の保存に失敗しました';
+			return;
+		}
+
+		try {
+			const res = await fetch('/api/file', {
+				method: 'PATCH',
+				headers: {
+					'content-type': 'application/json'
+				},
+				body: JSON.stringify({ path, title: nextTitle })
+			});
+			const body = (await res.json().catch(() => ({ message: res.statusText }))) as {
+				path?: string;
+				content?: string;
+				message?: string;
+			};
+
+			if (!res.ok || !body.path || typeof body.content !== 'string') {
+				throw new Error(body.message ?? `タイトル変更に失敗しました (${res.status})`);
+			}
+
+			content = body.content;
+			lastSavedContent = body.content;
+			lastSavedAt = new Date();
+			saveStatus = 'saved';
+			titleDraft = nextTitle;
+			isTitleEditing = false;
+			renameStatus = 'idle';
+			renameError = null;
+			markNotesDirty();
+			treeState.revealFile(body.path);
+			await goto(`/note/${encodeNotePath(body.path)}`, { replaceState: true });
+		} catch (e) {
+			renameStatus = 'error';
+			renameError = e instanceof Error ? e.message : 'タイトル変更に失敗しました';
+		}
+	}
+
+	function resetTitleDraft() {
+		titleDraft = currentTitle;
+		isTitleEditing = false;
+		renameStatus = 'idle';
+		renameError = null;
+	}
+
+	function startTitleEditing() {
+		if (loading || renameStatus === 'renaming') return;
+		titleDraft = currentTitle;
+		isTitleEditing = true;
+		renameStatus = 'idle';
+		renameError = null;
+		requestAnimationFrame(() => {
+			titleInput?.focus();
+			titleInput?.select();
+		});
+	}
+
+	function handleTitleKeydown(event: KeyboardEvent) {
+		if (!isTitleEditing) return;
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			void renameNote();
+		}
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			resetTitleDraft();
 		}
 	}
 
@@ -237,6 +341,17 @@
 			return value;
 		}
 	}
+
+	function titleFromPath(pathValue: string): string {
+		const filename = pathValue.split('/').pop() ?? '';
+		const match = filename.match(/^(\d{2})_(.+)\.md$/);
+		if (match) return match[2];
+		return filename.replace(/\.md$/i, '');
+	}
+
+	function encodeNotePath(rel: string): string {
+		return rel.split('/').map(encodeURIComponent).join('/');
+	}
 </script>
 
 <div class="flex h-full min-h-[calc(100vh-3rem)] flex-col bg-background">
@@ -265,10 +380,68 @@
 		</div>
 	</div>
 
-	<div class="flex h-8 shrink-0 items-center justify-end border-b px-3 text-xs text-muted-foreground">
+	<div class="flex h-10 shrink-0 items-center gap-2 border-b px-3 text-xs text-muted-foreground">
+		<div class="flex min-w-0 flex-1 items-center gap-1.5">
+			<input
+				bind:this={titleInput}
+				class={cn(
+					'min-w-0 flex-1 rounded border px-2 py-1 text-sm font-medium text-foreground outline-none',
+					isTitleEditing
+						? 'bg-background focus:border-primary'
+						: 'border-transparent bg-transparent'
+				)}
+				aria-label="ノートタイトル"
+				bind:value={titleDraft}
+				onkeydown={handleTitleKeydown}
+				readonly={!isTitleEditing}
+				disabled={loading || renameStatus === 'renaming'}
+			/>
+			{#if !isTitleEditing}
+				<button
+					type="button"
+					class="inline-flex size-7 shrink-0 items-center justify-center rounded border bg-background text-muted-foreground hover:bg-accent disabled:opacity-60"
+					aria-label="タイトルを編集"
+					title="タイトルを編集"
+					onclick={startTitleEditing}
+					disabled={loading || renameStatus === 'renaming'}
+				>
+					<Pencil class="size-3.5" />
+				</button>
+			{:else}
+				<button
+					type="button"
+					class="inline-flex size-7 shrink-0 items-center justify-center rounded border bg-background text-foreground hover:bg-accent disabled:opacity-60"
+					aria-label="タイトルを変更"
+					title="タイトルを変更"
+					onclick={() => void renameNote()}
+					disabled={loading || renameStatus === 'renaming'}
+				>
+					{#if renameStatus === 'renaming'}
+						<Loader2 class="size-3.5 animate-spin" />
+					{:else}
+						<Check class="size-3.5" />
+					{/if}
+				</button>
+				<button
+					type="button"
+					class="inline-flex size-7 shrink-0 items-center justify-center rounded border bg-background text-muted-foreground hover:bg-accent disabled:opacity-60"
+					aria-label="タイトル変更を取り消し"
+					title="タイトル変更を取り消し"
+					onclick={resetTitleDraft}
+					disabled={renameStatus === 'renaming'}
+				>
+					<X class="size-3.5" />
+				</button>
+			{/if}
+		</div>
+		{#if renameError}
+			<span class="hidden max-w-[16rem] truncate text-red-600 md:inline" title={renameError}>
+				{renameError}
+			</span>
+		{/if}
 		<span
 			class={cn(
-				'truncate',
+				'shrink-0 truncate',
 				saveStatus === 'error' && 'text-red-600',
 				saveStatus === 'saving' && 'text-blue-600',
 				saveStatus === 'pending' && 'text-amber-700'
