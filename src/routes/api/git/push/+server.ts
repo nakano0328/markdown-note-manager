@@ -18,6 +18,10 @@ interface ChangedNote {
 	title: string;
 }
 
+interface PushRequestBody {
+	files?: unknown;
+}
+
 function buildCommitMessage(files: string[]): string {
 	const candidates = new Set<string>();
 	for (const file of files) {
@@ -65,6 +69,25 @@ function aheadCount(status: StatusResult): number {
 	return typeof ahead === 'number' && Number.isFinite(ahead) ? ahead : 0;
 }
 
+async function readRequestedFiles(request: Request): Promise<string[] | null> {
+	const raw = await request.text();
+	if (!raw.trim()) return null;
+
+	let body: PushRequestBody;
+	try {
+		body = JSON.parse(raw) as PushRequestBody;
+	} catch {
+		throw error(400, 'Invalid JSON body');
+	}
+
+	if (body.files === undefined) return null;
+	if (!Array.isArray(body.files) || !body.files.every((item) => typeof item === 'string')) {
+		throw error(400, 'files must be a string array');
+	}
+
+	return Array.from(new Set(body.files.map((file) => normalizePendingPath(file))));
+}
+
 async function ensureGitRepo(git: SimpleGit, root: string) {
 	const isRepo = await git.checkIsRepo();
 	if (!isRepo) {
@@ -79,7 +102,7 @@ async function ensureRemote(git: SimpleGit) {
 	}
 }
 
-export const POST: RequestHandler = async () => {
+export const POST: RequestHandler = async ({ request }) => {
 	let root: string;
 	try {
 		root = getNotesDir();
@@ -104,8 +127,15 @@ export const POST: RequestHandler = async () => {
 
 		const status = await git.status();
 		const pendingFiles = await getPendingPushFiles(root);
+		const requestedFiles = await readRequestedFiles(request);
+		const pendingSet = new Set(pendingFiles);
+		if (requestedFiles?.some((file) => !pendingSet.has(file))) {
+			throw error(400, 'Requested file is not pending push target');
+		}
+
 		const changedPaths = changedPathSet(status);
-		const targetFiles = pendingFiles.filter((file) => changedPaths.has(file));
+		const targetSourceFiles = requestedFiles ?? pendingFiles;
+		const targetFiles = targetSourceFiles.filter((file) => changedPaths.has(file));
 		const otherChangedFiles = status.files.filter(
 			(file) => !pendingFiles.includes(normalizePendingPath(file.path))
 		).length;
@@ -123,6 +153,7 @@ export const POST: RequestHandler = async () => {
 				commit: null,
 				branch: status.current ?? null,
 				pendingFiles: 0,
+				pendingFilePaths: [],
 				otherChangedFiles: 0,
 				ahead: 0
 			});
@@ -143,6 +174,7 @@ export const POST: RequestHandler = async () => {
 					branch,
 					pushSummary: pushResult.update ?? null,
 					pendingFiles: 0,
+					pendingFilePaths: [],
 					otherChangedFiles,
 					ahead
 				});
@@ -161,9 +193,17 @@ export const POST: RequestHandler = async () => {
 				commit: null,
 				branch,
 				pendingFiles: 0,
+				pendingFilePaths: pendingFiles.filter((file) => changedPaths.has(file)),
 				otherChangedFiles,
 				ahead
 			});
+		}
+
+		if (ahead > 0) {
+			throw error(
+				409,
+				`未 push commit ${ahead} 件があります。対象外 commit の混入を避けるため、先に状態を確認してください`
+			);
 		}
 
 		const commitMessage = buildCommitMessage(targetFiles);
@@ -190,6 +230,7 @@ export const POST: RequestHandler = async () => {
 			branch,
 			pushSummary: pushResult.update ?? null,
 			pendingFiles: remainingPendingFiles.length,
+			pendingFilePaths: remainingPendingFiles,
 			otherChangedFiles,
 			ahead
 		});

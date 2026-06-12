@@ -13,7 +13,8 @@
 		CalendarDays,
 		Loader2,
 		CheckCircle2,
-		AlertCircle
+		AlertCircle,
+		ChevronDown
 	} from 'lucide-svelte';
 	import { cn } from '$lib/utils';
 	import { NOTES_DIRTY_EVENT } from '$lib/notes-sync';
@@ -29,8 +30,11 @@
 	let pushMessage = $state<string | null>(null);
 	let hasPendingChanges = $state(false);
 	let pendingFileCount = $state(0);
+	let pendingFilePaths = $state<string[]>([]);
 	let otherChangedFileCount = $state(0);
 	let aheadCommitCount = $state(0);
+	let pushMenuOpen = $state(false);
+	let activePushPath = $state<string | null>(null);
 	let pushResetTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const breadcrumbs = $derived.by(() => {
@@ -53,7 +57,7 @@
 		}, delay);
 	}
 
-	async function handlePush() {
+	async function handlePush(files: string[] | null = null) {
 		if (pushStatus === 'pushing') return;
 		if (pushResetTimer) {
 			clearTimeout(pushResetTimer);
@@ -61,14 +65,20 @@
 		}
 		pushStatus = 'pushing';
 		pushMessage = null;
+		activePushPath = files?.length === 1 ? files[0] : null;
 		try {
-			const res = await fetch('/api/git/push', { method: 'POST' });
+			const res = await fetch('/api/git/push', {
+				method: 'POST',
+				headers: files ? { 'content-type': 'application/json' } : undefined,
+				body: files ? JSON.stringify({ files }) : undefined
+			});
 			const body = (await res.json().catch(() => ({}))) as {
 				ok?: boolean;
 				pushed?: boolean;
 				message?: string;
 				commitMessage?: string | null;
 				pendingFiles?: number;
+				pendingFilePaths?: string[];
 				otherChangedFiles?: number;
 				ahead?: number;
 			};
@@ -76,6 +86,7 @@
 				throw new Error(body.message ?? `Push に失敗しました (${res.status})`);
 			}
 			pendingFileCount = body.pendingFiles ?? 0;
+			pendingFilePaths = body.pendingFilePaths ?? [];
 			otherChangedFileCount = body.otherChangedFiles ?? 0;
 			aheadCommitCount = body.ahead ?? 0;
 			if (body.pushed) {
@@ -88,11 +99,14 @@
 				pushMessage = body.message ?? 'No changes';
 			}
 			void loadGitStatus();
+			if (pendingFileCount === 0) pushMenuOpen = false;
 			schedulePushReset();
 		} catch (e) {
 			pushStatus = 'error';
 			pushMessage = e instanceof Error ? e.message : 'Push に失敗しました';
 			schedulePushReset(8000);
+		} finally {
+			activePushPath = null;
 		}
 	}
 
@@ -114,6 +128,10 @@
 		return rel.split('/').map(encodeURIComponent).join('/');
 	}
 
+	function fileLabel(pathValue: string): string {
+		return pathValue.split('/').at(-1) ?? pathValue;
+	}
+
 	async function loadGitStatus() {
 		try {
 			const res = await fetch('/api/git/status');
@@ -121,13 +139,16 @@
 			const body = (await res.json()) as {
 				dirty?: boolean;
 				pendingFiles?: number;
+				pendingFilePaths?: string[];
 				otherChangedFiles?: number;
 				ahead?: number;
 			};
 			hasPendingChanges = Boolean(body.dirty);
 			pendingFileCount = body.pendingFiles ?? 0;
+			pendingFilePaths = body.pendingFilePaths ?? [];
 			otherChangedFileCount = body.otherChangedFiles ?? 0;
 			aheadCommitCount = body.ahead ?? 0;
+			if (pendingFilePaths.length === 0) pushMenuOpen = false;
 		} catch {
 			// git 状態の表示に失敗しても編集操作は妨げない。
 		}
@@ -219,48 +240,108 @@
 					{pushMessage}
 				</span>
 			{/if}
-			<button
-				type="button"
-				onclick={handlePush}
-				disabled={pushStatus === 'pushing'}
-				class={cn(
-					'inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition disabled:opacity-70',
-					pushIconClasses()
-				)}
-				title={
-					pushMessage ??
-					(hasPendingChanges
-						? `未同期の対象変更 ${pendingFileCount} 件、未 push commit ${aheadCommitCount} 件`
-						: otherChangedFileCount > 0
-							? `対象外の変更 ${otherChangedFileCount} 件は push しません`
-							: 'アプリで保存した変更を git add/commit/push')
-				}
-			>
-				{#if pushStatus === 'pushing'}
-					<Loader2 class="size-3.5 animate-spin" />
-				{:else if pushStatus === 'success'}
-					<CheckCircle2 class="size-3.5" />
-				{:else if pushStatus === 'error'}
-					<AlertCircle class="size-3.5" />
-				{:else}
-					<UploadCloud class="size-3.5" />
+			<div class="relative flex shrink-0 items-center">
+				<button
+					type="button"
+					onclick={() => void handlePush()}
+					disabled={pushStatus === 'pushing'}
+					class={cn(
+						'inline-flex items-center gap-1.5 rounded-l px-3 py-1.5 text-xs font-medium transition disabled:opacity-70',
+						pendingFilePaths.length > 0 ? 'rounded-r-none' : 'rounded-r',
+						pushIconClasses()
+					)}
+					title={
+						pushMessage ??
+						(hasPendingChanges
+							? `未同期の対象変更 ${pendingFileCount} 件、未 push commit ${aheadCommitCount} 件`
+							: otherChangedFileCount > 0
+								? `対象外の変更 ${otherChangedFileCount} 件は push しません`
+								: 'アプリで保存した変更を git add/commit/push')
+					}
+				>
+					{#if pushStatus === 'pushing' && activePushPath === null}
+						<Loader2 class="size-3.5 animate-spin" />
+					{:else if pushStatus === 'success'}
+						<CheckCircle2 class="size-3.5" />
+					{:else if pushStatus === 'error'}
+						<AlertCircle class="size-3.5" />
+					{:else}
+						<UploadCloud class="size-3.5" />
+					{/if}
+					{#if pushStatus === 'pushing'}
+						Pushing…
+					{:else if pushStatus === 'success'}
+						Pushed
+					{:else if pushStatus === 'error'}
+						Push 失敗
+					{:else if pushStatus === 'noop'}
+						変更なし
+					{:else if hasPendingChanges}
+						{pendingFileCount > 1 ? `未同期 ${pendingFileCount}` : '未同期'}
+					{:else if otherChangedFileCount > 0}
+						対象外あり
+					{:else}
+						Push
+					{/if}
+				</button>
+				{#if pendingFilePaths.length > 0}
+					<button
+						type="button"
+						onclick={() => (pushMenuOpen = !pushMenuOpen)}
+						disabled={pushStatus === 'pushing'}
+						class={cn(
+							'inline-flex items-center justify-center rounded-r border-l border-black/10 px-2 py-1.5 text-xs font-medium transition disabled:opacity-70',
+							pushIconClasses()
+						)}
+						aria-label="Push 対象を選択"
+						title="Push 対象を選択"
+					>
+						<ChevronDown class={cn('size-3.5 transition', pushMenuOpen && 'rotate-180')} />
+					</button>
 				{/if}
-				{#if pushStatus === 'pushing'}
-					Pushing…
-				{:else if pushStatus === 'success'}
-					Pushed
-				{:else if pushStatus === 'error'}
-					Push 失敗
-				{:else if pushStatus === 'noop'}
-					変更なし
-				{:else if hasPendingChanges}
-					{pendingFileCount > 1 ? `未同期 ${pendingFileCount}` : '未同期'}
-				{:else if otherChangedFileCount > 0}
-					対象外あり
-				{:else}
-					Push
+
+				{#if pushMenuOpen && pendingFilePaths.length > 0}
+					<div
+						class="absolute right-0 top-full z-30 mt-2 w-[min(26rem,calc(100vw-1.5rem))] rounded border bg-background shadow-lg"
+					>
+						<div class="flex items-center justify-between gap-2 border-b px-3 py-2">
+							<span class="min-w-0 truncate text-xs font-medium text-foreground">Push 対象</span>
+							<button
+								type="button"
+								class="inline-flex items-center gap-1 rounded border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent disabled:opacity-60"
+								onclick={() => void handlePush()}
+								disabled={pushStatus === 'pushing'}
+							>
+								<UploadCloud class="size-3" />
+								すべて
+							</button>
+						</div>
+						<div class="max-h-72 overflow-y-auto p-1">
+							{#each pendingFilePaths as file (file)}
+								<div class="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent">
+									<span class="min-w-0 flex-1 truncate text-[11px] text-foreground" title={file}>
+										{fileLabel(file)}
+									</span>
+									<button
+										type="button"
+										class="inline-flex shrink-0 items-center gap-1 rounded border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent disabled:opacity-60"
+										onclick={() => void handlePush([file])}
+										disabled={pushStatus === 'pushing'}
+										title={`${file} を push`}
+									>
+										{#if pushStatus === 'pushing' && activePushPath === file}
+											<Loader2 class="size-3 animate-spin" />
+										{:else}
+											<UploadCloud class="size-3" />
+										{/if}
+										Push
+									</button>
+								</div>
+							{/each}
+						</div>
+					</div>
 				{/if}
-			</button>
+			</div>
 		</div>
 	</header>
 

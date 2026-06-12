@@ -11,6 +11,15 @@ function statusAhead(status: unknown): number {
 	return typeof ahead === 'number' && Number.isFinite(ahead) ? ahead : 0;
 }
 
+function changedPathSet(status: { files: Array<{ path: string; from?: string }> }): Set<string> {
+	const paths = new Set<string>();
+	for (const file of status.files) {
+		paths.add(normalizePendingPath(file.path));
+		if (file.from) paths.add(normalizePendingPath(file.from));
+	}
+	return paths;
+}
+
 export const GET: RequestHandler = async () => {
 	let root: string;
 	try {
@@ -38,15 +47,18 @@ export const GET: RequestHandler = async () => {
 	const status = await git.status();
 	const pendingFiles = await getPendingPushFiles(root);
 	const pendingSet = new Set(pendingFiles);
-	const changedFiles = status.files.map((file) => normalizePendingPath(file.path));
-	const pendingChangedFiles = changedFiles.filter((file) => pendingSet.has(file)).length;
-	const otherChangedFiles = changedFiles.length - pendingChangedFiles;
+	const changedPaths = changedPathSet(status);
+	const pendingChangedFilePaths = pendingFiles.filter((file) => changedPaths.has(file));
+	const otherChangedFiles = status.files.filter(
+		(file) => !pendingSet.has(normalizePendingPath(file.path))
+	).length;
 	const ahead = statusAhead(status);
 	return json({
 		ok: true,
-		dirty: pendingChangedFiles > 0 || (pendingFiles.length > 0 && ahead > 0),
-		changedFiles: pendingChangedFiles,
-		pendingFiles: pendingChangedFiles,
+		dirty: pendingChangedFilePaths.length > 0 || (pendingFiles.length > 0 && ahead > 0),
+		changedFiles: pendingChangedFilePaths.length,
+		pendingFiles: pendingChangedFilePaths.length,
+		pendingFilePaths: pendingChangedFilePaths,
 		otherChangedFiles,
 		ahead,
 		branch: status.current ?? null
