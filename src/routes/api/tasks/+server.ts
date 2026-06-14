@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getNotesDir, resolveSafePath } from '$lib/server/notes-dir';
+import { trackPendingPushFiles, toNotesRelativePath } from '$lib/server/pending-push';
 import type { TaskItem, TaskPriority } from '$lib/types';
 import type { RequestHandler } from './$types';
 
@@ -186,6 +187,7 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	const nextLine = `${match[1]}${body.isCompleted ? 'x' : ' '}${match[3]}${match[4]}${match[5]}`;
 	lines[index] = nextLine;
 	await fs.writeFile(absPath, lines.join(newline), 'utf-8');
+	await trackPendingPushFiles([toNotesRelativePath(absPath)]);
 
 	const task = toTaskItem(relPath, body.lineNumber, nextLine);
 	return json({ task });
