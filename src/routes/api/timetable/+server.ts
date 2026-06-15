@@ -4,6 +4,7 @@ import path from 'node:path';
 import { getNotesDir } from '$lib/server/notes-dir';
 import { formatLocalDate } from '$lib/calendar';
 import { DATE_ONLY, isObject } from '$lib/server/validators';
+import { ensureSlotDirectory, ensureTimetableDirectories } from '$lib/server/note-directories';
 import {
 	assertTermRangesValid,
 	defaultTermForDate,
@@ -241,20 +242,28 @@ export const POST: RequestHandler = async ({ request }) => {
 		ensureTerm(settings, applyUntilTermId);
 
 		const store = await readStore(settings.activeTermId);
-		let slotUpdates: SlotUpdate[] = [];
+		let rawSlotUpdates: SlotUpdate[] = [];
 		if (Array.isArray(body.slotUpdates)) {
 			if (!body.slotUpdates.every(isValidSlotUpdate)) {
 				throw error(400, 'slotUpdates payload is invalid');
 			}
-			slotUpdates = body.slotUpdates;
+			rawSlotUpdates = body.slotUpdates;
 		} else if (isValidSlotUpdate(body.slotUpdate)) {
-			slotUpdates = [body.slotUpdate];
+			rawSlotUpdates = [body.slotUpdate];
 		}
+
+		const timetablePayload = await ensureTimetableDirectories(body.timetable);
+		const slotUpdates = await Promise.all(
+			rawSlotUpdates.map(async (update) => ({
+				...update,
+				slot: await ensureSlotDirectory(update.slot)
+			}))
+		);
 		if (slotUpdates.length > 0) {
 			const range = termRange(settings, termId, applyUntilTermId);
 			for (const term of range) {
 				if (term.id === termId) {
-					store.terms[term.id] = body.timetable;
+					store.terms[term.id] = timetablePayload;
 					continue;
 				}
 
@@ -265,7 +274,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				store.terms[term.id] = next;
 			}
 		} else {
-			store.terms[termId] = body.timetable;
+			store.terms[termId] = timetablePayload;
 		}
 
 		await writeStore(timetablePath(), store);

@@ -228,6 +228,7 @@
 				viewedTerm,
 				viewedTimetable: timetable
 			});
+			await loadDirectories();
 			await loadTimetable();
 			closeSlotEditor();
 		} catch (e) {
@@ -438,6 +439,13 @@
 		if (!draft.subject) draft.subject = directoryName(directory);
 	}
 
+	function fillDraftSubjectFromDirectory() {
+		if (!draft) return;
+		if (!draft.subject.trim() && draft.directory.trim()) {
+			draft.subject = directoryName(draft.directory);
+		}
+	}
+
 	function buildPayload(draftValue: EventDraft): Record<string, unknown> | string {
 		const base: Record<string, unknown> = { date: draftValue.date, type: draftValue.type };
 		if (draftValue.mode === 'edit' && draftValue.id) base.id = draftValue.id;
@@ -503,6 +511,7 @@
 				nextEvents = [...events, data.event];
 			}
 			events = nextEvents;
+			await loadDirectories();
 			void loadTimetable(monthAnchor, nextEvents);
 			draft = null;
 		} catch (e) {
@@ -1122,16 +1131,37 @@
 						</label>
 						<label class="block">
 							<span class="mb-1 block text-xs font-medium text-muted-foreground">ディレクトリ *</span>
-							<select
+							<input
+								type="text"
 								bind:value={draft.directory}
-								onchange={() => selectDirectory(draft!.directory)}
+								oninput={() => (saveError = null)}
+								onblur={fillDraftSubjectFromDirectory}
+								list="event-directories"
+								placeholder="例: 2年生/春/パターン認識"
 								class="w-full rounded border bg-white px-2 py-1.5 text-sm focus:border-primary focus:outline-none"
-							>
-								<option value="">選択してください</option>
+							/>
+							<datalist id="event-directories">
 								{#each directories as dir (dir)}
-									<option value={dir}>{directoryName(dir)} ({dir})</option>
+									<option value={dir}>{directoryName(dir)}</option>
 								{/each}
-							</select>
+							</datalist>
+							{#if directories.length > 0}
+								<div class="mt-1 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+									{#each directories as dir (dir)}
+										<button
+											type="button"
+											onclick={() => selectDirectory(dir)}
+											class={cn(
+												'rounded border px-1.5 py-0.5 text-[10px] hover:bg-accent',
+												draft.directory === dir && 'border-primary bg-primary/10 text-primary'
+											)}
+											title={dir}
+										>
+											{directoryName(dir)}
+										</button>
+									{/each}
+								</div>
+							{/if}
 						</label>
 					{/if}
 				{/if}

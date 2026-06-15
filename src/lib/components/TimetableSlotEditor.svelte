@@ -96,6 +96,10 @@
 		errorMessage = null;
 	}
 
+	function fillSubjectFromDirectory() {
+		if (!subject.trim() && directory.trim()) subject = directoryName(directory);
+	}
+
 	async function submit() {
 		if (saving) return;
 		const subjectTrim = subject.trim();
@@ -181,21 +185,25 @@
 				<div class="block">
 					<span class="mb-1 block text-xs font-medium text-muted-foreground">ディレクトリ</span>
 					<div class="relative">
-						<button
-							type="button"
-							onclick={() => (directoryMenuOpen = !directoryMenuOpen)}
-							class={cn(
-								'flex w-full items-center justify-between gap-2 rounded border bg-white px-2 py-1.5 text-left text-sm focus:border-primary focus:outline-none',
-								!directory && 'text-muted-foreground'
-							)}
-							aria-expanded={directoryMenuOpen}
-							aria-label="ディレクトリを選択"
-						>
-							<span class="min-w-0 flex-1 truncate">
-								{directory || '例: 2年生/春/パターン認識'}
-							</span>
-							<ChevronDown class={cn('size-4 shrink-0 transition', directoryMenuOpen && 'rotate-180')} />
-						</button>
+						<div class="flex rounded border bg-white focus-within:border-primary">
+							<input
+								type="text"
+								bind:value={directory}
+								oninput={() => (errorMessage = null)}
+								onblur={fillSubjectFromDirectory}
+								placeholder="例: 2年生/春/パターン認識"
+								class="min-w-0 flex-1 rounded-l bg-transparent px-2 py-1.5 text-sm focus:outline-none"
+							/>
+							<button
+								type="button"
+								onclick={() => (directoryMenuOpen = !directoryMenuOpen)}
+								class="flex size-8 shrink-0 items-center justify-center rounded-r text-muted-foreground hover:bg-accent"
+								aria-expanded={directoryMenuOpen}
+								aria-label="既存ディレクトリを選択"
+							>
+								<ChevronDown class={cn('size-4 transition', directoryMenuOpen && 'rotate-180')} />
+							</button>
+						</div>
 
 						{#if directoryMenuOpen}
 							<div class="mt-1 max-h-48 overflow-y-auto rounded border bg-white shadow-sm">

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import holiday_jp from '@holiday-jp/holiday_jp';
 import { getNotesDir } from '$lib/server/notes-dir';
+import { ensureSlotDirectory } from '$lib/server/note-directories';
 import type {
 	CalendarEvent,
 	DateMoveEvent,
@@ -160,6 +161,14 @@ function normalizeIncoming(body: unknown, fallbackId: string): CalendarEvent | n
 	return null;
 }
 
+async function ensureEventDirectory(event: CalendarEvent): Promise<CalendarEvent> {
+	if (event.type !== 'period_override') return event;
+	return {
+		...event,
+		slot: await ensureSlotDirectory(event.slot)
+	};
+}
+
 export const GET: RequestHandler = async ({ url }) => {
 	const from = url.searchParams.get('from');
 	const to = url.searchParams.get('to');
@@ -179,10 +188,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	const store = await readStore();
 	const candidate = normalizeIncoming(body, uniqueEventId(store));
 	if (!candidate) throw error(400, 'Invalid calendar event payload');
+	const event = await ensureEventDirectory(candidate);
 
-	store.events = [...store.events, candidate];
+	store.events = [...store.events, event];
 	await writeStore(store);
-	return json({ event: candidate });
+	return json({ event });
 };
 
 export const PATCH: RequestHandler = async ({ request }) => {
@@ -195,10 +205,11 @@ export const PATCH: RequestHandler = async ({ request }) => {
 
 	const updated = normalizeIncoming(body, body.id);
 	if (!updated) throw error(400, 'Invalid calendar event payload');
+	const event = await ensureEventDirectory(updated);
 
-	store.events = store.events.map((event, i) => (i === index ? updated : event));
+	store.events = store.events.map((existing, i) => (i === index ? event : existing));
 	await writeStore(store);
-	return json({ event: updated });
+	return json({ event });
 };
 
 export const DELETE: RequestHandler = async ({ url }) => {
