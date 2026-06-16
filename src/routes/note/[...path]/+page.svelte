@@ -382,6 +382,18 @@
 
 	<div class="flex h-10 shrink-0 items-center gap-2 border-b px-3 text-xs text-muted-foreground">
 		<div class="flex min-w-0 flex-1 items-center gap-1.5">
+			{#if !isTitleEditing}
+				<button
+					type="button"
+					class="inline-flex size-7 shrink-0 items-center justify-center rounded border bg-background text-muted-foreground hover:bg-accent disabled:opacity-60"
+					aria-label="タイトルを編集"
+					title="タイトルを編集"
+					onclick={startTitleEditing}
+					disabled={loading || renameStatus === 'renaming'}
+				>
+					<Pencil class="size-3.5" />
+				</button>
+			{/if}
 			<input
 				bind:this={titleInput}
 				class={cn(
@@ -396,18 +408,7 @@
 				readonly={!isTitleEditing}
 				disabled={loading || renameStatus === 'renaming'}
 			/>
-			{#if !isTitleEditing}
-				<button
-					type="button"
-					class="inline-flex size-7 shrink-0 items-center justify-center rounded border bg-background text-muted-foreground hover:bg-accent disabled:opacity-60"
-					aria-label="タイトルを編集"
-					title="タイトルを編集"
-					onclick={startTitleEditing}
-					disabled={loading || renameStatus === 'renaming'}
-				>
-					<Pencil class="size-3.5" />
-				</button>
-			{:else}
+			{#if isTitleEditing}
 				<button
 					type="button"
 					class="inline-flex size-7 shrink-0 items-center justify-center rounded border bg-background text-foreground hover:bg-accent disabled:opacity-60"
