@@ -10,6 +10,14 @@ export default defineConfig(({ mode }) => {
 
 	return {
 		plugins: [tailwindcss(), sveltekit()],
+		resolve: {
+			alias: [
+				{
+					find: /^lucide-svelte$/,
+					replacement: path.resolve('src/lib/lucide-svelte.ts')
+				}
+			]
+		},
 		server: normalizedNotesDir
 			? {
 					watch: {
